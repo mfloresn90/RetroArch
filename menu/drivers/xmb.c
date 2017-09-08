@@ -174,7 +174,6 @@ enum
 
 typedef struct xmb_handle
 {
-   file_list_t *menu_stack_old;
    file_list_t *selection_buf_old;
    file_list_t *horizontal_list;
    size_t selection_ptr_old;
@@ -448,21 +447,38 @@ static void xmb_free_node(xmb_node_t *node)
     free(node);
 }
 
-/* NOTE: This is faster than memcpy()ing xmb_node_t in most cases
- * because most nodes have small (less than 200 bytes) fullpath */
-static xmb_node_t *xmb_copy_node(void *p)
+/**
+ * @brief frees all xmb_node_t in a file_list_t
+ *
+ * file_list_t asumes userdata holds a simple structure and
+ * free()'s it. Can't change this at the time because other
+ * code depends on this behavior.
+ *
+ * @param list
+ * @param actiondata whether to free actiondata too
+ */
+static void xmb_free_list_nodes(file_list_t *list, bool actiondata)
 {
-   xmb_node_t *old_node = (xmb_node_t*)p;
+   unsigned i, size = file_list_get_size(list);
+
+   for (i = 0; i < size; ++i)
+   {
+      xmb_free_node((xmb_node_t*)file_list_get_userdata_at_offset(list, i));
+
+      /* file_list_set_userdata() doesn't accept NULL */
+      list->list[i].userdata = NULL;
+
+      if (actiondata)
+         file_list_free_actiondata(list, i);
+   }
+}
+
+static xmb_node_t *xmb_copy_node(const xmb_node_t *old_node)
+{
    xmb_node_t *new_node = (xmb_node_t*)malloc(sizeof(*new_node));
 
-   new_node->alpha        = old_node->alpha;
-   new_node->label_alpha  = old_node->label_alpha;
-   new_node->zoom         = old_node->zoom;
-   new_node->x            = old_node->x;
-   new_node->y            = old_node->y;
-   new_node->icon         = old_node->icon;
-   new_node->content_icon = old_node->content_icon;
-   new_node->fullpath     = old_node->fullpath ? strdup(old_node->fullpath) : NULL;
+   *new_node            = *old_node;
+   new_node->fullpath   = old_node->fullpath ? strdup(old_node->fullpath) : NULL;
 
    return new_node;
 }
@@ -1432,11 +1448,10 @@ static xmb_node_t *xmb_node_allocate_userdata(xmb_handle_t *xmb, unsigned i)
       node->zoom  = xmb->categories.active.zoom;
    }
 
-   tmp = (xmb_node_t*)file_list_get_actiondata_at_offset(xmb->horizontal_list, i);
-
+   tmp = (xmb_node_t*)file_list_get_userdata_at_offset(xmb->horizontal_list, i);
    xmb_free_node(tmp);
 
-   file_list_set_actiondata(xmb->horizontal_list, i, node);
+   file_list_set_userdata(xmb->horizontal_list, i, node);
 
    return node;
 }
@@ -1445,7 +1460,7 @@ static xmb_node_t* xmb_get_userdata_from_horizontal_list(
       xmb_handle_t *xmb, unsigned i)
 {
    return (xmb_node_t*)
-      menu_entries_get_actiondata_at_offset(xmb->horizontal_list, i);
+      menu_entries_get_userdata_at_offset(xmb->horizontal_list, i);
 }
 
 static void xmb_push_animations(xmb_node_t *node, uintptr_t tag, float ia, float ix)
@@ -1672,7 +1687,8 @@ static void xmb_list_switch_horizontal_list(xmb_handle_t *xmb)
       entry.target_value = ia;
       entry.subject      = &node->alpha;
       entry.easing_enum  = EASING_OUT_QUAD;
-      entry.tag          = -1;
+      /* TODO/FIXME - integer conversion resulted in change of sign */
+      entry.tag          = -1; 
       entry.cb           = NULL;
 
       menu_animation_push(&entry);
@@ -1704,6 +1720,7 @@ static void xmb_list_switch(xmb_handle_t *xmb)
    entry.target_value = xmb->icon.spacing.horizontal * -(float)xmb->categories.selection_ptr;
    entry.subject      = &xmb->categories.x_pos;
    entry.easing_enum  = EASING_OUT_QUAD;
+   /* TODO/FIXME - integer conversion resulted in change of sign */
    entry.tag          = -1;
    entry.cb           = NULL;
 
@@ -1769,6 +1786,7 @@ static void xmb_list_open_horizontal_list(xmb_handle_t *xmb)
       entry.target_value = ia;
       entry.subject      = &node->alpha;
       entry.easing_enum  = EASING_OUT_QUAD;
+      /* TODO/FIXME - integer conversion resulted in change of sign */
       entry.tag          = -1;
       entry.cb           = NULL;
 
@@ -1970,7 +1988,10 @@ static void xmb_refresh_horizontal_list(xmb_handle_t *xmb)
 {
    xmb_context_destroy_horizontal_list(xmb);
    if (xmb->horizontal_list)
+   {
+      xmb_free_list_nodes(xmb->horizontal_list, false);
       file_list_free(xmb->horizontal_list);
+   }
    xmb->horizontal_list = NULL;
 
    menu_driver_ctl(RARCH_MENU_CTL_SET_PREVENT_POPULATE, NULL);
@@ -2039,6 +2060,7 @@ static void xmb_list_open(xmb_handle_t *xmb)
    entry.target_value = xmb->icon.size * -(xmb->depth*2-2);
    entry.subject      = &xmb->x;
    entry.easing_enum  = EASING_OUT_QUAD;
+   /* TODO/FIXME - integer conversion resulted in change of sign */
    entry.tag          = -1;
    entry.cb           = NULL;
 
@@ -2250,6 +2272,9 @@ static void xmb_calculate_visible_range(const xmb_handle_t *xmb,
    unsigned j;
    float    base_y = xmb->margins.screen.top;
 
+   *first = 0;
+   *last  = list_size ? list_size - 1 : 0;
+
    if (current)
    {
       for (j = current; j-- > 0; )
@@ -2278,7 +2303,7 @@ static void xmb_draw_items(
       video_frame_info_t *video_info,
       menu_display_frame_info_t menu_disp_info,
       xmb_handle_t *xmb,
-      file_list_t *list, file_list_t *stack,
+      file_list_t *list,
       size_t current, size_t cat_selection_ptr, float *color,
       unsigned width, unsigned height)
 {
@@ -2790,7 +2815,6 @@ static void xmb_frame(void *data, video_frame_info_t *video_info)
    unsigned height                         = video_info->height;
    bool render_background                  = false;
    file_list_t *selection_buf              = NULL;
-   file_list_t *menu_stack                 = NULL;
    xmb_handle_t *xmb                       = (xmb_handle_t*)data;
 
    if (!xmb)
@@ -3067,7 +3091,6 @@ static void xmb_frame(void *data, video_frame_info_t *video_info)
          menu_disp_info,
          xmb,
          xmb->selection_buf_old,
-         xmb->menu_stack_old,
          xmb->selection_ptr_old,
          (xmb_list_get_size(xmb, MENU_LIST_PLAIN) > 1)
          ? xmb->categories.selection_ptr : xmb->categories.selection_ptr_old,
@@ -3076,14 +3099,12 @@ static void xmb_frame(void *data, video_frame_info_t *video_info)
          height);
 
    selection_buf = menu_entries_get_selection_buf_ptr(0);
-   menu_stack    = menu_entries_get_menu_stack_ptr(0);
 
    xmb_draw_items(
          video_info,
          menu_disp_info,
          xmb,
          selection_buf,
-         menu_stack,
          selection,
          xmb->categories.selection_ptr,
          &item_color[0],
@@ -3412,11 +3433,6 @@ static void *xmb_init(void **userdata, bool video_is_threaded)
 
    *userdata = xmb;
 
-   xmb->menu_stack_old        = (file_list_t*)calloc(1, sizeof(file_list_t));
-
-   if (!xmb->menu_stack_old)
-      goto error;
-
    xmb->selection_buf_old     = (file_list_t*)calloc(1, sizeof(file_list_t));
 
    if (!xmb->selection_buf_old)
@@ -3484,14 +3500,14 @@ error:
 
    if (xmb)
    {
-      if (xmb->menu_stack_old)
-         free(xmb->menu_stack_old);
-      xmb->menu_stack_old = NULL;
       if (xmb->selection_buf_old)
          free(xmb->selection_buf_old);
       xmb->selection_buf_old = NULL;
       if (xmb->horizontal_list)
+      {
+         xmb_free_list_nodes(xmb->horizontal_list, false);
          file_list_free(xmb->horizontal_list);
+      }
       xmb->horizontal_list = NULL;
    }
    return NULL;
@@ -3503,23 +3519,26 @@ static void xmb_free(void *data)
 
    if (xmb)
    {
-      if (xmb->menu_stack_old)
-         file_list_free(xmb->menu_stack_old);
-      xmb->menu_stack_old = NULL;
-
       if (xmb->selection_buf_old)
+      {
+         xmb_free_list_nodes(xmb->selection_buf_old, false);
          file_list_free(xmb->selection_buf_old);
-      xmb->selection_buf_old = NULL;
+      }
+
       if (xmb->horizontal_list)
+      {
+         xmb_free_list_nodes(xmb->horizontal_list, false);
          file_list_free(xmb->horizontal_list);
-      xmb->horizontal_list = NULL;
+      }
+
+      xmb->selection_buf_old = NULL;
+      xmb->horizontal_list   = NULL;
 
       video_coord_array_free(&xmb->raster_block.carr);
       video_coord_array_free(&xmb->raster_block2.carr);
    }
 
    font_driver_bind_block(NULL, NULL);
-
 }
 
 static void xmb_context_bg_destroy(xmb_handle_t *xmb)
@@ -3885,61 +3904,59 @@ static void xmb_list_insert(void *userdata,
 
 static void xmb_list_clear(file_list_t *list)
 {
-   size_t i;
-   size_t size                = list->size;
    menu_animation_ctx_tag tag = (uintptr_t)list;
 
    menu_animation_ctl(MENU_ANIMATION_CTL_KILL_BY_TAG, &tag);
 
-   for (i = 0; i < size; ++i)
-   {
-      xmb_node_t *node = (xmb_node_t*)
-         menu_entries_get_userdata_at_offset(list, i);
-
-      if (!node)
-         continue;
-
-      xmb_free_node(node);
-      list->list[i].userdata = NULL;
-   }
+   xmb_free_list_nodes(list, false);
 }
 
-static void xmb_list_deep_copy(const file_list_t *src, file_list_t *dst)
+static void xmb_list_free(file_list_t *list, size_t a, size_t b)
 {
-   size_t i;
+   xmb_list_clear(list);
+}
+
+static void xmb_list_deep_copy(const file_list_t *src, file_list_t *dst,
+      size_t first, size_t last)
+{
+   size_t i, j = 0;
    menu_animation_ctx_tag tag = (uintptr_t)dst;
-   size_t size                  = dst->size;
 
    menu_animation_ctl(MENU_ANIMATION_CTL_KILL_BY_TAG, &tag);
 
-   for (i = 0; i < size; ++i)
+   /* use true here because file_list_copy() doesn't free actiondata */
+   xmb_free_list_nodes(dst, true);
+
+   file_list_clear(dst);
+   file_list_reserve(dst, (last + 1) - first);
+
+   for (i = first; i <= last; ++i)
    {
-      xmb_node_t *node = (xmb_node_t*)menu_entries_get_userdata_at_offset(dst, i);
+      struct item_file *d = &dst->list[j];
+      struct item_file *s = &src->list[i];
 
-      xmb_free_node(node);
-      dst->list[i].userdata = NULL;
-      file_list_free_actiondata(dst, i); /* this one was allocated by us */
-   }
+      void *src_udata = s->userdata;
+      void *src_adata = s->actiondata;
 
-   file_list_copy(src, dst);
-
-   size = dst->size;
-
-   for (i = 0; i < size; ++i)
-   {
-      void *src_udata = menu_entries_get_userdata_at_offset(src, i);
-      void *src_adata = (void*)menu_entries_get_actiondata_at_offset(src, i);
+      *d       = *s;
+      d->alt   = string_is_empty(d->alt)   ? NULL : strdup(d->alt);
+      d->path  = string_is_empty(d->path)  ? NULL : strdup(d->path);
+      d->label = string_is_empty(d->label) ? NULL : strdup(d->label);
 
       if (src_udata)
-         file_list_set_userdata(dst, i, xmb_copy_node(src_udata));
+         file_list_set_userdata(dst, j, (void*)xmb_copy_node((const xmb_node_t*)src_udata));
 
       if (src_adata)
       {
          void *data = malloc(sizeof(menu_file_list_cbs_t));
          memcpy(data, src_adata, sizeof(menu_file_list_cbs_t));
-         file_list_set_actiondata(dst, i, data);
+         file_list_set_actiondata(dst, j, data);
       }
+
+      ++j;
    }
+
+   dst->size = j;
 }
 
 static void xmb_list_cache(void *data, enum menu_list_type type, unsigned action)
@@ -3954,18 +3971,29 @@ static void xmb_list_cache(void *data, enum menu_list_type type, unsigned action
    if (!xmb)
       return;
 
+   /* FIXME: this shouldn't be happening at all */
+   if (selection >= selection_buf->size)
+      selection = selection_buf->size ? selection_buf->size - 1 : 0;
+
+   xmb->selection_ptr_old = selection;
+
    /* Check whether to enable the horizontal animation. */
    if (settings->bools.menu_horizontal_animation)
    {
-      xmb_list_deep_copy(selection_buf, xmb->selection_buf_old);
-      xmb_list_deep_copy(menu_stack, xmb->menu_stack_old);
+      unsigned first = 0, last = 0;
+      unsigned height = 0;
+      video_driver_get_size(NULL, &height);
+
+      xmb_calculate_visible_range(xmb, height, selection_buf->size,
+            xmb->selection_ptr_old, &first, &last);
+
+      xmb_list_deep_copy(selection_buf, xmb->selection_buf_old, first, last);
+
+      xmb->selection_ptr_old -= first;
+      last                   -= first;
+      first                   = 0;
    }
 
-   /* FIXME: this shouldn't be happening at all */
-   if (selection >= xmb->selection_buf_old->size)
-      selection = xmb->selection_buf_old->size ? xmb->selection_buf_old->size - 1 : 0;
-
-   xmb->selection_ptr_old = selection;
 
    list_size = xmb_list_get_size(xmb, MENU_LIST_HORIZONTAL)
       + xmb->system_tab_end;
@@ -4126,6 +4154,7 @@ static void xmb_toggle(void *userdata, bool menu_on)
    entry.target_value = 1.0f;
    entry.subject      = &xmb->alpha;
    entry.easing_enum  = EASING_OUT_QUAD;
+   /* TODO/FIXME - integer conversion resulted in change of sign */
    entry.tag          = -1;
    entry.cb           = NULL;
 
@@ -4403,7 +4432,7 @@ menu_ctx_driver_t menu_ctx_xmb = {
    xmb_menu_init_list,
    xmb_list_insert,
    NULL,
-   NULL,
+   xmb_list_free,
    xmb_list_clear,
    xmb_list_cache,
    xmb_list_push,

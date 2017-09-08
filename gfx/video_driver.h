@@ -793,7 +793,7 @@ typedef struct video_driver
    unsigned (*wrap_type_to_enum)(enum gfx_wrap_type type);
 } video_driver_t;
 
-typedef struct renderchain_driver
+typedef struct d3d_renderchain_driver
 {
    void (*chain_free)(void *data);
    void *(*chain_new)(void);
@@ -821,7 +821,26 @@ typedef struct renderchain_driver
    bool (*read_viewport)(void *data, uint8_t *buffer, bool is_idle);
    void (*viewport_info)(void *data, struct video_viewport *vp);
    const char *ident;
-} renderchain_driver_t;
+} d3d_renderchain_driver_t;
+
+typedef struct gl_renderchain_driver
+{
+   void (*init)(void *data, unsigned fbo_width, unsigned fbo_height);
+   bool (*init_hw_render)(void *data, unsigned width, unsigned height);
+   void (*free)(void *data);
+   void (*deinit_hw_render)(void *data);
+   void (*start_render)(void *data, video_frame_info_t *video_info);
+   void (*check_fbo_dimensions)(void *data);
+   void (*recompute_pass_sizes)(void *data,
+         unsigned width, unsigned height,
+         unsigned vp_width, unsigned vp_height);
+   void (*renderchain_render)(void *data,
+         video_frame_info_t *video_info,
+         uint64_t frame_count,
+         const struct video_tex_info *tex_info,
+         const struct video_tex_info *feedback_info);
+   const char *ident;
+} gl_renderchain_driver_t;
 
 extern struct aspect_ratio_elem aspectratio_lut[ASPECT_RATIO_END];
 
@@ -1234,7 +1253,7 @@ bool video_shader_driver_compile_program(struct shader_program_info *program_inf
 
 bool video_shader_driver_wrap_type(video_shader_ctx_wrap_t *wrap);
 
-bool renderchain_init_first(const renderchain_driver_t **renderchain_driver,
+bool renderchain_init_first(const d3d_renderchain_driver_t **renderchain_driver,
 	void **renderchain_handle);
 
 extern bool (*video_driver_cb_has_focus)(void);
@@ -1252,7 +1271,6 @@ extern video_driver_t video_gx;
 extern video_driver_t video_wiiu;
 extern video_driver_t video_xenon360;
 extern video_driver_t video_xvideo;
-extern video_driver_t video_xdk_d3d;
 extern video_driver_t video_sdl;
 extern video_driver_t video_sdl2;
 extern video_driver_t video_vg;
@@ -1295,9 +1313,10 @@ extern const shader_backend_t hlsl_backend;
 extern const shader_backend_t gl_cg_backend;
 extern const shader_backend_t shader_null_backend;
 
-extern renderchain_driver_t cg_d3d9_renderchain;
-extern renderchain_driver_t xdk_d3d_renderchain;
-extern renderchain_driver_t null_renderchain;
+extern d3d_renderchain_driver_t d3d8_renderchain;
+extern d3d_renderchain_driver_t cg_d3d9_renderchain;
+extern d3d_renderchain_driver_t hlsl_d3d9_renderchain;
+extern d3d_renderchain_driver_t null_renderchain;
 
 RETRO_END_DECLS
 

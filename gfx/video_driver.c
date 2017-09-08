@@ -391,12 +391,15 @@ static const shader_backend_t *shader_ctx_drivers[] = {
    NULL
 };
 
-static const renderchain_driver_t *renderchain_drivers[] = {
+static const d3d_renderchain_driver_t *renderchain_drivers[] = {
 #if defined(_WIN32) && defined(HAVE_D3D9) && defined(HAVE_CG)
    &cg_d3d9_renderchain,
 #endif
-#ifdef _XBOX
-   &xdk_d3d_renderchain,
+#if defined(_WIN32) && defined(HAVE_D3D9) && defined(HAVE_HLSL)
+   &hlsl_d3d9_renderchain,
+#endif
+#if defined(_WIN32) && defined(HAVE_D3D8)
+   &d3d8_renderchain,
 #endif
    &null_renderchain,
    NULL
@@ -2318,7 +2321,7 @@ void video_driver_frame(const void *data, unsigned width,
          snprintf(frames_text,
                sizeof(frames_text),
                STRING_REP_UINT64,
-               (unsigned long long)video_driver_frame_count);
+               (uint64_t)video_driver_frame_count);
 
          strlcat(video_driver_window_title,
                frames_text,
@@ -2334,7 +2337,7 @@ void video_driver_frame(const void *data, unsigned width,
                "FPS: %6.1f || %s: " STRING_REP_UINT64,
                last_fps,
                msg_hash_to_str(MSG_FRAMES),
-               (unsigned long long)video_driver_frame_count);
+               (uint64_t)video_driver_frame_count);
    }
    else
    {
@@ -3378,7 +3381,7 @@ bool video_shader_driver_wrap_type(video_shader_ctx_wrap_t *wrap)
    return true;
 }
 
-bool renderchain_init_first(const renderchain_driver_t **renderchain_driver,
+bool renderchain_init_first(const d3d_renderchain_driver_t **renderchain_driver,
 	void **renderchain_handle)
 {
    unsigned i;

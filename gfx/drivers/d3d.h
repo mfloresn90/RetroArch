@@ -28,16 +28,6 @@
 #define HAVE_WINDOW
 #endif
 
-#if defined(_XBOX1)
-#ifndef HAVE_D3D8
-#define HAVE_D3D8
-#endif
-#else
-#ifndef HAVE_D3D9
-#define HAVE_D3D9
-#endif
-#endif
-
 #include "../../defines/d3d_defines.h"
 
 #ifdef _XBOX1
@@ -65,17 +55,15 @@ typedef struct
    void *vert_buf;
 } overlay_t;
 
-#ifdef _XBOX
 typedef struct Vertex
 {
    float x, y;
-#if defined(_XBOX1)
+#if defined(HAVE_D3D8)
    float z;
    float rhw;
 #endif
    float u, v;
 } Vertex;
-#endif
 
 typedef struct d3d_video
 {
@@ -109,7 +97,7 @@ typedef struct d3d_video
 #if defined(HAVE_MENU)
    overlay_t *menu;
 #endif
-   const renderchain_driver_t *renderchain_driver;
+   const d3d_renderchain_driver_t *renderchain_driver;
    void *renderchain_data;
 
    /* TODO - refactor this away properly. */
