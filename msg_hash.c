@@ -78,6 +78,9 @@ int menu_hash_get_help_enum(enum msg_hash_enums msg, char *s, size_t len)
       case RETRO_LANGUAGE_CHINESE_TRADITIONAL:
          ret = menu_hash_get_help_cht_enum(msg, s, len);
          break;
+      case RETRO_LANGUAGE_ARABIC:
+         ret = menu_hash_get_help_ar_enum(msg, s, len);
+         break;
       default:
          break;
    }
@@ -140,6 +143,9 @@ const char *msg_hash_to_str(enum msg_hash_enums msg)
          break;
       case RETRO_LANGUAGE_CHINESE_TRADITIONAL:
          ret = msg_hash_to_str_cht(msg);
+         break;
+      case RETRO_LANGUAGE_ARABIC:
+         ret = msg_hash_to_str_ar(msg);
          break;
       default:
          break;
@@ -231,9 +237,12 @@ uint32_t msg_hash_calculate(const char *s)
 #define HASH_EXTENSION_ZIP_UPP                                                 0x0b883b78U
 #define HASH_EXTENSION_CUE                                                     0x0b886782U
 #define HASH_EXTENSION_CUE_UPPERCASE                                           0x0b87db22U
+#define HASH_EXTENSION_GDI                                                     0x00b887659
+#define HASH_EXTENSION_GDI_UPPERCASE                                           0x00b87e9f9
 #define HASH_EXTENSION_ISO                                                     0x0b8880d0U
 #define HASH_EXTENSION_ISO_UPPERCASE                                           0x0b87f470U
 #define HASH_EXTENSION_LUTRO                                                   0x0fe37b7bU
+#define HASH_EXTENSION_CHD                                                     0x0b8865d4U
 
 enum msg_file_type msg_hash_to_file_type(uint32_t hash)
 {
@@ -375,11 +384,16 @@ enum msg_file_type msg_hash_to_file_type(uint32_t hash)
       case HASH_EXTENSION_CUE:
       case HASH_EXTENSION_CUE_UPPERCASE:
          return FILE_TYPE_CUE;
+      case HASH_EXTENSION_GDI:
+      case HASH_EXTENSION_GDI_UPPERCASE:
+         return FILE_TYPE_GDI;
       case HASH_EXTENSION_ISO:
       case HASH_EXTENSION_ISO_UPPERCASE:
          return FILE_TYPE_ISO;
       case HASH_EXTENSION_LUTRO:
          return FILE_TYPE_LUTRO;
+      case HASH_EXTENSION_CHD:
+         return FILE_TYPE_CHD;
       default:
          break;
    }

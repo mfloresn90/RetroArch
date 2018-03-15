@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- * 
+ *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
  *  ation, either version 3 of the License, or (at your option) any later version.
@@ -21,7 +21,6 @@
 #include <lists/string_list.h>
 #include <audio/conversion/float_to_s16.h>
 #include <audio/conversion/s16_to_float.h>
-#include <audio/audio_resampler.h>
 #include <audio/dsp_filter.h>
 #include <file/file_path.h>
 #include <lists/dir_list.h>
@@ -111,10 +110,13 @@ static const audio_driver_t *audio_drivers[] = {
 #endif
 #if defined(PSP) || defined(VITA)
   &audio_psp,
-#endif   
+#endif
 #ifdef _3DS
    &audio_ctr_csnd,
    &audio_ctr_dsp,
+#endif
+#ifdef SWITCH
+   &audio_switch,
 #endif
    &audio_null,
    NULL,
@@ -144,13 +146,15 @@ static size_t audio_driver_rewind_size                   = 0;
 static int16_t *audio_driver_rewind_buf                  = NULL;
 static int16_t *audio_driver_output_samples_conv_buf     = NULL;
 
+#ifdef DEBUG
 static unsigned audio_driver_free_samples_buf[AUDIO_BUFFER_FREE_SAMPLES_COUNT];
 static uint64_t audio_driver_free_samples_count          = 0;
+#endif
 
 static size_t audio_driver_buffer_size                   = 0;
 static size_t audio_driver_data_ptr                      = 0;
 
-static bool audio_driver_control                         = false; 
+static bool audio_driver_control                         = false;
 static bool audio_driver_mixer_mute_enable               = false;
 static bool audio_driver_mute_enable                     = false;
 static bool audio_driver_use_float                       = false;
@@ -179,6 +183,17 @@ static void *audio_driver_resampler_data                 = NULL;
 static const audio_driver_t *current_audio               = NULL;
 static void *audio_driver_context_audio_data             = NULL;
 
+enum resampler_quality audio_driver_get_resampler_quality(void)
+{
+   settings_t *settings = config_get_ptr();
+
+   if (!settings)
+      return RESAMPLER_QUALITY_DONTCARE;
+
+   return (enum resampler_quality)settings->uints.audio_resampler_quality;
+}
+
+#ifdef DEBUG
 /**
  * compute_audio_buffer_statistics:
  *
@@ -212,13 +227,22 @@ static void compute_audio_buffer_statistics(void)
       accum_var += diff * diff;
    }
 
-#if defined(_MSC_VER) && _MSC_VER <= 1200
+#ifdef WARPUP
+   /* uint64 to double not implemented, fair chance signed int64 to double doesn't exist either */
+   /* https://forums.libretro.com/t/unsupported-platform-help/13903/ */
+   (void)stddev; (void)avg_filled; (void)deviation;
+#elif defined(_MSC_VER) && _MSC_VER <= 1200
    /* FIXME: error C2520: conversion from unsigned __int64 to double not implemented, use signed __int64 */
+   (void)stddev; (void)avg_filled; (void)deviation;
 #else
    stddev          = (unsigned)sqrt((double)accum_var / (samples - 2));
    avg_filled      = 1.0f - (float)avg / audio_driver_buffer_size;
    deviation       = (float)stddev / audio_driver_buffer_size;
+
+   RARCH_LOG("[Audio]: Average audio buffer saturation: %.2f %%, standard deviation (percentage points): %.2f %%.\n",
+         avg_filled * 100.0, deviation * 100.0);
 #endif
+
    low_water_size  = (unsigned)(audio_driver_buffer_size * 3 / 4);
    high_water_size = (unsigned)(audio_driver_buffer_size     / 4);
 
@@ -230,12 +254,11 @@ static void compute_audio_buffer_statistics(void)
          high_water_count++;
    }
 
-   RARCH_LOG("[Audio]: Average audio buffer saturation: %.2f %%, standard deviation (percentage points): %.2f %%.\n",
-         avg_filled * 100.0, deviation * 100.0);
    RARCH_LOG("[Audio]: Amount of time spent close to underrun: %.2f %%. Close to blocking: %.2f %%.\n",
          (100.0 * low_water_count) / (samples - 1),
          (100.0 * high_water_count) / (samples - 1));
 }
+#endif
 
 /**
  * audio_driver_find_handle:
@@ -320,7 +343,9 @@ static bool audio_driver_deinit_internal(void)
 
    command_event(CMD_EVENT_DSP_FILTER_DEINIT, NULL);
 
+#ifdef DEBUG
    compute_audio_buffer_statistics();
+#endif
 
    return true;
 }
@@ -335,13 +360,13 @@ static bool audio_driver_init_internal(bool audio_cb_inited)
    size_t max_bufsamples = AUDIO_CHUNK_SIZE_NONBLOCKING * 2;
    settings_t *settings  = config_get_ptr();
    /* Accomodate rewind since at some point we might have two full buffers. */
-   size_t outsamples_max = AUDIO_CHUNK_SIZE_NONBLOCKING * 2 * AUDIO_MAX_RATIO * 
+   size_t outsamples_max = AUDIO_CHUNK_SIZE_NONBLOCKING * 2 * AUDIO_MAX_RATIO *
       settings->floats.slowmotion_ratio;
 
    convert_s16_to_float_init_simd();
    convert_float_to_s16_init_simd();
 
-   conv_buf = (int16_t*)malloc(outsamples_max 
+   conv_buf = (int16_t*)malloc(outsamples_max
          * sizeof(int16_t));
    /* Used for recording even if audio isn't enabled. */
    retro_assert(conv_buf != NULL);
@@ -379,9 +404,9 @@ static bool audio_driver_init_internal(bool audio_cb_inited)
       if (!audio_init_thread(
                &current_audio,
                &audio_driver_context_audio_data,
-               *settings->arrays.audio_device 
+               *settings->arrays.audio_device
                ? settings->arrays.audio_device : NULL,
-               settings->uints.audio_out_rate, &new_rate, 
+               settings->uints.audio_out_rate, &new_rate,
                settings->uints.audio_latency,
                settings->uints.audio_block_frames,
                current_audio))
@@ -393,7 +418,7 @@ static bool audio_driver_init_internal(bool audio_cb_inited)
    else
 #endif
    {
-      audio_driver_context_audio_data = 
+      audio_driver_context_audio_data =
          current_audio->init(*settings->arrays.audio_device ?
                settings->arrays.audio_device : NULL,
                settings->uints.audio_out_rate,
@@ -414,7 +439,7 @@ static bool audio_driver_init_internal(bool audio_cb_inited)
    }
 
    audio_driver_use_float = false;
-   if (     audio_driver_active 
+   if (     audio_driver_active
          && current_audio->use_float(audio_driver_context_audio_data))
       audio_driver_use_float = true;
 
@@ -439,6 +464,7 @@ static bool audio_driver_init_internal(bool audio_cb_inited)
             &audio_driver_resampler_data,
             &audio_driver_resampler,
             settings->arrays.audio_resampler,
+            audio_driver_get_resampler_quality(),
             audio_source_ratio_original))
    {
       RARCH_ERR("Failed to initialize resampler \"%s\".\n",
@@ -470,7 +496,7 @@ static bool audio_driver_init_internal(bool audio_cb_inited)
 
    if (
          !audio_cb_inited
-         && audio_driver_active 
+         && audio_driver_active
          && settings->bools.audio_rate_control
          )
    {
@@ -478,7 +504,7 @@ static bool audio_driver_init_internal(bool audio_cb_inited)
        * and buffer_size to be implemented. */
       if (current_audio->buffer_size)
       {
-         audio_driver_buffer_size = 
+         audio_driver_buffer_size =
             current_audio->buffer_size(audio_driver_context_audio_data);
          audio_driver_control = true;
       }
@@ -488,7 +514,9 @@ static bool audio_driver_init_internal(bool audio_cb_inited)
 
    command_event(CMD_EVENT_DSP_FILTER_INIT, NULL);
 
+#ifdef DEBUG
    audio_driver_free_samples_count = 0;
+#endif
 
    audio_mixer_init(settings->uints.audio_out_rate);
 
@@ -516,8 +544,8 @@ void audio_driver_set_nonblocking_state(bool enable)
             audio_driver_context_audio_data,
             settings->bools.audio_sync ? enable : true);
 
-   audio_driver_chunk_size = enable ? 
-      audio_driver_chunk_nonblock_size : 
+   audio_driver_chunk_size = enable ?
+      audio_driver_chunk_nonblock_size :
       audio_driver_chunk_block_size;
 }
 
@@ -528,11 +556,8 @@ void audio_driver_set_nonblocking_state(bool enable)
  *
  * Writes audio samples to audio driver. Will first
  * perform DSP processing (if enabled) and resampling.
- *
- * Returns: true (1) if audio samples were written to the audio
- * driver, false (0) in case of an error.
  **/
-static bool audio_driver_flush(const int16_t *data, size_t samples)
+static void audio_driver_flush(const int16_t *data, size_t samples)
 {
    struct resampler_data src_data;
    bool is_perfcnt_enable                               = false;
@@ -541,7 +566,7 @@ static bool audio_driver_flush(const int16_t *data, size_t samples)
    bool is_slowmotion                                   = false;
    const void *output_data                              = NULL;
    unsigned output_frames                               = 0;
-   float audio_volume_gain                              = !audio_driver_mute_enable ? 
+   float audio_volume_gain                              = !audio_driver_mute_enable ?
       audio_driver_volume_gain : 0.0f;
 
    src_data.data_in                                     = NULL;
@@ -556,10 +581,11 @@ static bool audio_driver_flush(const int16_t *data, size_t samples)
    runloop_get_status(&is_paused, &is_idle, &is_slowmotion,
          &is_perfcnt_enable);
 
-   if (is_paused)
-      return true;
-   if (!audio_driver_active || !audio_driver_input_data)
-      return false;
+   if (            is_paused                || 
+		   !audio_driver_active     || 
+		   !audio_driver_input_data ||
+		   !audio_driver_output_samples_buf)
+      return;
 
    convert_s16_to_float(audio_driver_input_data, data, samples,
          audio_volume_gain);
@@ -594,29 +620,31 @@ static bool audio_driver_flush(const int16_t *data, size_t samples)
    if (audio_driver_control)
    {
       /* Readjust the audio input rate. */
-      unsigned write_idx   = audio_driver_free_samples_count++ &
-         (AUDIO_BUFFER_FREE_SAMPLES_COUNT - 1);
       int      half_size   = (int)(audio_driver_buffer_size / 2);
-      int      avail       = 
+      int      avail       =
          (int)current_audio->write_avail(audio_driver_context_audio_data);
       int      delta_mid   = avail - half_size;
       double   direction   = (double)delta_mid / half_size;
       double   adjust      = 1.0 + audio_driver_rate_control_delta * direction;
-
-#if 0
-      RARCH_LOG_OUTPUT("[Audio]: Audio buffer is %u%% full\n",
-            (unsigned)(100 - (avail * 100) / audio_driver_buffer_size));
-#endif
+#ifdef DEBUG
+      unsigned write_idx   = audio_driver_free_samples_count++ &
+         (AUDIO_BUFFER_FREE_SAMPLES_COUNT - 1);
 
       audio_driver_free_samples_buf
          [write_idx]               = avail;
-      audio_source_ratio_current   = 
+#endif
+      audio_source_ratio_current   =
          audio_source_ratio_original * adjust;
 
 #if 0
-      RARCH_LOG_OUTPUT("[Audio]: New rate: %lf, Orig rate: %lf\n",
-            audio_source_ratio_current,
-            audio_source_ratio_original);
+      if (verbosity_is_enabled())
+      {
+         RARCH_LOG_OUTPUT("[Audio]: Audio buffer is %u%% full\n",
+               (unsigned)(100 - (avail * 100) / audio_driver_buffer_size));
+         RARCH_LOG_OUTPUT("[Audio]: New rate: %lf, Orig rate: %lf\n",
+               audio_source_ratio_current,
+               audio_source_ratio_original);
+      }
 #endif
    }
 
@@ -632,9 +660,9 @@ static bool audio_driver_flush(const int16_t *data, size_t samples)
 
    if (audio_mixer_active)
    {
-      bool override     = audio_driver_mixer_mute_enable ? true : 
+      bool override     = audio_driver_mixer_mute_enable ? true :
          (audio_driver_mixer_volume_gain != 0.0f) ? true : false;
-      float mixer_gain  = !audio_driver_mixer_mute_enable ? 
+      float mixer_gain  = !audio_driver_mixer_mute_enable ?
          audio_driver_mixer_volume_gain : 0.0f;
       audio_mixer_mix(audio_driver_output_samples_buf,
             src_data.output_frames, mixer_gain, override);
@@ -656,12 +684,7 @@ static bool audio_driver_flush(const int16_t *data, size_t samples)
 
    if (current_audio->write(audio_driver_context_audio_data,
             output_data, output_frames * 2) < 0)
-   {
       audio_driver_active = false;
-      return false;
-   }
-
-   return true;
 }
 
 /**
@@ -679,7 +702,7 @@ void audio_driver_sample(int16_t left, int16_t right)
    if (audio_driver_data_ptr < audio_driver_chunk_size)
       return;
 
-   audio_driver_flush(audio_driver_output_samples_conv_buf, 
+   audio_driver_flush(audio_driver_output_samples_conv_buf,
          audio_driver_data_ptr);
 
    audio_driver_data_ptr = 0;
@@ -710,8 +733,8 @@ size_t audio_driver_sample_batch(const int16_t *data, size_t frames)
  * @left                 : value of the left audio channel.
  * @right                : value of the right audio channel.
  *
- * Audio sample render callback function (rewind version). 
- * This callback function will be used instead of 
+ * Audio sample render callback function (rewind version).
+ * This callback function will be used instead of
  * audio_driver_sample when rewinding is activated.
  **/
 void audio_driver_sample_rewind(int16_t left, int16_t right)
@@ -725,9 +748,9 @@ void audio_driver_sample_rewind(int16_t left, int16_t right)
  * @data                 : pointer to audio buffer.
  * @frames               : amount of audio frames to push.
  *
- * Batched audio sample render callback function (rewind version). 
+ * Batched audio sample render callback function (rewind version).
  *
- * This callback function will be used instead of 
+ * This callback function will be used instead of
  * audio_driver_sample_batch when rewinding is activated.
  *
  * Returns: amount of frames sampled. Will be equal to @frames
@@ -753,15 +776,14 @@ void audio_driver_dsp_filter_free(void)
 
 void audio_driver_dsp_filter_init(const char *device)
 {
-#if defined(HAVE_DYLIB) && !defined(HAVE_FILTERS_BUILTIN)
-   char basedir[PATH_MAX_LENGTH];
-   char ext_name[PATH_MAX_LENGTH];
-#endif
    struct string_list *plugs     = NULL;
 #if defined(HAVE_DYLIB) && !defined(HAVE_FILTERS_BUILTIN)
-   fill_pathname_basedir(basedir, device, sizeof(basedir));
+   char *basedir   = (char*)calloc(PATH_MAX_LENGTH, sizeof(*basedir));
+   char *ext_name  = (char*)calloc(PATH_MAX_LENGTH, sizeof(*ext_name));
+   size_t str_size = PATH_MAX_LENGTH * sizeof(char);
+   fill_pathname_basedir(basedir, device, str_size);
 
-   if (!frontend_driver_get_core_extension(ext_name, sizeof(ext_name)))
+   if (!frontend_driver_get_core_extension(ext_name, str_size))
       goto error;
 
    plugs = dir_list_new(basedir, ext_name, false, true, false, false);
@@ -773,9 +795,18 @@ void audio_driver_dsp_filter_init(const char *device)
    if (!audio_driver_dsp)
       goto error;
 
+#if defined(HAVE_DYLIB) && !defined(HAVE_FILTERS_BUILTIN)
+   free(basedir);
+   free(ext_name);
+#endif
+
    return;
 
 error:
+#if defined(HAVE_DYLIB) && !defined(HAVE_FILTERS_BUILTIN)
+   free(basedir);
+   free(ext_name);
+#endif
    if (!audio_driver_dsp)
       RARCH_ERR("[DSP]: Failed to initialize DSP filter \"%s\".\n", device);
 }
@@ -792,9 +823,9 @@ void audio_driver_monitor_adjust_system_rates(void)
    struct retro_system_av_info   *av_info = video_viewport_get_system_av_info();
    float video_refresh_rate               = settings->floats.video_refresh_rate;
    float max_timing_skew                  = settings->floats.audio_max_timing_skew;
-   const struct retro_system_timing *info = av_info ? 
+   const struct retro_system_timing *info = av_info ?
       (const struct retro_system_timing*)&av_info->timing : NULL;
-   
+
    if (!info || info->sample_rate <= 0.0)
       return;
 
@@ -844,13 +875,16 @@ bool audio_driver_find_driver(void)
       current_audio = (const audio_driver_t*)audio_driver_find_handle(i);
    else
    {
-      unsigned d;
-      RARCH_ERR("Couldn't find any audio driver named \"%s\"\n",
-            settings->arrays.audio_driver);
-      RARCH_LOG_OUTPUT("Available audio drivers are:\n");
-      for (d = 0; audio_driver_find_handle(d); d++)
-         RARCH_LOG_OUTPUT("\t%s\n", audio_driver_find_ident(d));
-      RARCH_WARN("Going to default to first audio driver...\n");
+      if (verbosity_is_enabled())
+      {
+         unsigned d;
+         RARCH_ERR("Couldn't find any audio driver named \"%s\"\n",
+               settings->arrays.audio_driver);
+         RARCH_LOG_OUTPUT("Available audio drivers are:\n");
+         for (d = 0; audio_driver_find_handle(d); d++)
+            RARCH_LOG_OUTPUT("\t%s\n", audio_driver_find_ident(d));
+         RARCH_WARN("Going to default to first audio driver...\n");
+      }
 
       current_audio = (const audio_driver_t*)audio_driver_find_handle(0);
 
@@ -874,7 +908,7 @@ bool audio_driver_free_devices_list(void)
    if (!current_audio || !current_audio->device_list_free
          || !audio_driver_context_audio_data)
       return false;
-   current_audio->device_list_free(audio_driver_context_audio_data, 
+   current_audio->device_list_free(audio_driver_context_audio_data,
          audio_driver_devices_list);
    audio_driver_devices_list = NULL;
    return true;
@@ -953,7 +987,8 @@ static int audio_mixer_find_index(audio_mixer_sound_t *sound)
    return -1;
 }
 
-static void audio_mixer_play_stop_cb(audio_mixer_sound_t *sound, unsigned reason)
+static void audio_mixer_play_stop_cb(
+      audio_mixer_sound_t *sound, unsigned reason)
 {
    int idx = audio_mixer_find_index(sound);
 
@@ -994,7 +1029,7 @@ bool audio_driver_mixer_add_stream(audio_mixer_stream_params_t *params)
    audio_mixer_stop_cb_t stop_cb = audio_mixer_play_stop_cb;
    bool looped                   = false;
    void *buf                     = NULL;
-   
+
    if (audio_mixer_current_max_idx >= AUDIO_MIXER_MAX_STREAMS)
       return false;
 
@@ -1123,7 +1158,7 @@ bool audio_driver_set_callback(const void *data)
 bool audio_driver_enable_callback(void)
 {
    if (!audio_callback.callback)
-      return false; 
+      return false;
    if (audio_callback.set_state)
       audio_callback.set_state(true);
    return true;
@@ -1143,7 +1178,7 @@ bool audio_driver_disable_callback(void)
 void audio_driver_monitor_set_rate(void)
 {
    settings_t *settings = config_get_ptr();
-   double new_src_ratio = (double)settings->uints.audio_out_rate / 
+   double new_src_ratio = (double)settings->uints.audio_out_rate /
       audio_driver_input;
 
    audio_source_ratio_original = new_src_ratio;
@@ -1163,7 +1198,9 @@ bool audio_driver_callback(void)
 
 bool audio_driver_has_callback(void)
 {
-   return audio_callback.callback;
+   if (audio_callback.callback)
+	   return true;
+   return false;
 }
 
 bool audio_driver_toggle_mute(void)
@@ -1180,8 +1217,8 @@ bool audio_driver_mixer_toggle_mute(void)
 
 static INLINE bool audio_driver_alive(void)
 {
-   if (     current_audio 
-         && current_audio->alive 
+   if (     current_audio
+         && current_audio->alive
          && audio_driver_context_audio_data)
       return current_audio->alive(audio_driver_context_audio_data);
    return false;
@@ -1189,7 +1226,7 @@ static INLINE bool audio_driver_alive(void)
 
 bool audio_driver_start(bool is_shutdown)
 {
-   if (!current_audio || !current_audio->start 
+   if (!current_audio || !current_audio->start
          || !audio_driver_context_audio_data)
       goto error;
    if (!current_audio->start(audio_driver_context_audio_data, is_shutdown))
@@ -1207,7 +1244,7 @@ error:
 
 bool audio_driver_stop(void)
 {
-   if (!current_audio || !current_audio->stop 
+   if (!current_audio || !current_audio->stop
          || !audio_driver_context_audio_data)
       return false;
    if (!audio_driver_alive())

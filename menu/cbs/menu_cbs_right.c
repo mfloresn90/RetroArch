@@ -24,12 +24,11 @@
 
 #include "../menu_content.h"
 #include "../menu_driver.h"
+#include "../menu_entries.h"
 #include "../menu_cbs.h"
 #include "../menu_input.h"
 #include "../menu_setting.h"
 #include "../menu_shader.h"
-
-#include "../widgets/menu_list.h"
 
 #include "../../configuration.h"
 #include "../../core.h"
@@ -37,7 +36,9 @@
 #include "../../managers/cheat_manager.h"
 #include "../../file_path_special.h"
 #include "../../retroarch.h"
+#include "../../verbosity.h"
 #include "../../ui/ui_companion_driver.h"
+#include "../../network/netplay/netplay.h"
 
 #ifndef BIND_ACTION_RIGHT
 #define BIND_ACTION_RIGHT(cbs, name) \
@@ -47,7 +48,8 @@
    } while(0)
 #endif
 
-#ifdef HAVE_SHADER_MANAGER
+extern struct key_desc key_descriptors[MENU_SETTINGS_INPUT_DESC_KBD_END];
+
 static int generic_shader_action_parameter_right(struct video_shader_parameter *param,
       unsigned type, const char *label, bool wraparound)
 {
@@ -67,21 +69,16 @@ int shader_action_parameter_right(unsigned type, const char *label, bool wraparo
    video_shader_driver_get_current_shader(&shader_info);
 
    param = &shader_info.data->parameters[type - MENU_SETTINGS_SHADER_PARAMETER_0];
-   if (!param)
-      return menu_cbs_exit();
-   return generic_shader_action_parameter_right(param, type, label, wraparound);
-}
 
-int shader_action_parameter_preset_right(unsigned type, const char *label,
-      bool wraparound)
-{
-   struct video_shader_parameter *param = menu_shader_manager_get_parameters(
-         type - MENU_SETTINGS_SHADER_PRESET_PARAMETER_0);
+   if (!param)
+      return menu_cbs_exit();
+   generic_shader_action_parameter_right(param, type, label, wraparound);
+   param = &shader_info.data->parameters[type - 
+      MENU_SETTINGS_SHADER_PARAMETER_0];
    if (!param)
       return menu_cbs_exit();
    return generic_shader_action_parameter_right(param, type, label, wraparound);
 }
-#endif
 
 int generic_action_cheat_toggle(size_t idx, unsigned type, const char *label,
       bool wraparound)
@@ -99,26 +96,58 @@ int action_right_cheat(unsigned type, const char *label,
          wraparound);
 }
 
-int action_right_input_desc(unsigned type, const char *label,
+#ifdef HAVE_KEYMAPPER
+int action_right_input_desc_kbd(unsigned type, const char *label,
       bool wraparound)
 {
-   unsigned inp_desc_index_offset = type - MENU_SETTINGS_INPUT_DESC_BEGIN;
-   unsigned inp_desc_user         = inp_desc_index_offset / (RARCH_FIRST_CUSTOM_BIND + 4);
-   unsigned inp_desc_button_index_offset = inp_desc_index_offset - (inp_desc_user * (RARCH_FIRST_CUSTOM_BIND + 4));
+   unsigned key_id;
+   unsigned remap_id;
+   char desc[PATH_MAX_LENGTH];
+   unsigned offset      = type - MENU_SETTINGS_INPUT_DESC_KBD_BEGIN;
    settings_t *settings = config_get_ptr();
 
-   if (inp_desc_button_index_offset < RARCH_FIRST_CUSTOM_BIND)
+   if (!settings)
+      return 0;
+
+   remap_id = settings->uints.input_keymapper_ids[offset];
+
+   for (key_id = 0; key_id < MENU_SETTINGS_INPUT_DESC_KBD_END - MENU_SETTINGS_INPUT_DESC_KBD_BEGIN; key_id++)
    {
-      if (settings->uints.input_remap_ids[inp_desc_user][inp_desc_button_index_offset] < RARCH_FIRST_CUSTOM_BIND - 1)
-         settings->uints.input_remap_ids[inp_desc_user][inp_desc_button_index_offset]++;
-   }
-   else
-   {
-      if (settings->uints.input_remap_ids[inp_desc_user][inp_desc_button_index_offset] < 4 - 1)
-         settings->uints.input_remap_ids[inp_desc_user][inp_desc_button_index_offset]++;
+      if(remap_id == key_descriptors[key_id].key)
+         break;
    }
 
+   if (key_id < MENU_SETTINGS_INPUT_DESC_KBD_END - MENU_SETTINGS_INPUT_DESC_KBD_BEGIN)
+      key_id++;
+   else
+      key_id = 0;
+
+   settings->uints.input_keymapper_ids[offset] = key_descriptors[key_id].key;
+
    return 0;
+}
+#endif
+
+int action_right_input_desc(unsigned type, const char *label,
+   bool wraparound)
+{
+unsigned inp_desc_index_offset = type - MENU_SETTINGS_INPUT_DESC_BEGIN;
+unsigned inp_desc_user         = inp_desc_index_offset / (RARCH_FIRST_CUSTOM_BIND + 4);
+unsigned inp_desc_button_index_offset = inp_desc_index_offset - (inp_desc_user * (RARCH_FIRST_CUSTOM_BIND + 4));
+settings_t *settings = config_get_ptr();
+
+if (inp_desc_button_index_offset < RARCH_FIRST_CUSTOM_BIND)
+{
+   if (settings->uints.input_remap_ids[inp_desc_user][inp_desc_button_index_offset] < RARCH_FIRST_CUSTOM_BIND - 1)
+      settings->uints.input_remap_ids[inp_desc_user][inp_desc_button_index_offset]++;
+}
+else
+{
+   if (settings->uints.input_remap_ids[inp_desc_user][inp_desc_button_index_offset] < 4 - 1)
+      settings->uints.input_remap_ids[inp_desc_user][inp_desc_button_index_offset]++;
+}
+
+return 0;
 }
 
 static int action_right_scroll(unsigned type, const char *label,
@@ -156,7 +185,8 @@ static int action_right_goto_tab(void)
    file_list_t *selection_buf = menu_entries_get_selection_buf_ptr(0);
    file_list_t *menu_stack    = menu_entries_get_menu_stack_ptr(0);
    size_t selection           = menu_navigation_get_selection();
-   menu_file_list_cbs_t *cbs  = menu_entries_get_actiondata_at_offset(selection_buf, selection);
+   menu_file_list_cbs_t *cbs  = selection_buf ? (menu_file_list_cbs_t*)
+	   file_list_get_actiondata_at_offset(selection_buf, selection) : NULL;
 
    list_info.type             = MENU_LIST_HORIZONTAL;
    list_info.action           = MENU_ACTION_RIGHT;
@@ -206,11 +236,11 @@ static int action_right_mainmenu(unsigned type, const char *label,
 static int action_right_shader_scale_pass(unsigned type, const char *label,
       bool wraparound)
 {
-#ifdef HAVE_SHADER_MANAGER
    unsigned current_scale, delta;
-   unsigned pass                         = 
+   unsigned pass                         =
       type - MENU_SETTINGS_SHADER_PASS_SCALE_0;
-   struct video_shader_pass *shader_pass = menu_shader_manager_get_pass(pass);
+   struct video_shader *shader           = menu_shader_get();
+   struct video_shader_pass *shader_pass = shader ? &shader->pass[pass] : NULL;
 
    if (!shader_pass)
       return menu_cbs_exit();
@@ -221,39 +251,33 @@ static int action_right_shader_scale_pass(unsigned type, const char *label,
 
    shader_pass->fbo.valid   = current_scale;
    shader_pass->fbo.scale_x = shader_pass->fbo.scale_y = current_scale;
-#endif
    return 0;
 }
 
 static int action_right_shader_filter_pass(unsigned type, const char *label,
       bool wraparound)
 {
-#ifdef HAVE_SHADER_MANAGER
    unsigned pass                         = type - MENU_SETTINGS_SHADER_PASS_FILTER_0;
    unsigned delta                        = 1;
-   struct video_shader_pass *shader_pass = menu_shader_manager_get_pass(pass);
+   struct video_shader *shader           = menu_shader_get();
+   struct video_shader_pass *shader_pass = shader ? &shader->pass[pass] : NULL;
 
    if (!shader_pass)
       return menu_cbs_exit();
 
    shader_pass->filter = ((shader_pass->filter + delta) % 3);
-#endif
    return 0;
 }
 
 static int action_right_shader_filter_default(unsigned type, const char *label,
       bool wraparound)
 {
-#ifdef HAVE_SHADER_MANAGER
    rarch_setting_t *setting = menu_setting_find_enum(MENU_ENUM_LABEL_VIDEO_SMOOTH);
    if (!setting)
       return menu_cbs_exit();
    return menu_action_handle_setting(setting,
          setting_get_type(setting), MENU_ACTION_RIGHT,
          wraparound);
-#else
-   return 0;
-#endif
 }
 
 static int action_right_cheat_num_passes(unsigned type, const char *label,
@@ -273,21 +297,66 @@ static int action_right_cheat_num_passes(unsigned type, const char *label,
 static int action_right_shader_num_passes(unsigned type, const char *label,
       bool wraparound)
 {
-#ifdef HAVE_SHADER_MANAGER
    bool refresh                = false;
    struct video_shader *shader = menu_shader_get();
+   unsigned pass_count         = shader ? shader->passes : 0;
 
    if (!shader)
       return menu_cbs_exit();
 
-   if ((menu_shader_manager_get_amount_passes() < GFX_MAX_SHADERS))
+   if (pass_count < GFX_MAX_SHADERS)
       menu_shader_manager_increment_amount_passes();
 
    menu_entries_ctl(MENU_ENTRIES_CTL_SET_REFRESH, &refresh);
    menu_driver_ctl(RARCH_MENU_CTL_SET_PREVENT_POPULATE, NULL);
    video_shader_resolve_parameters(NULL, shader);
 
-#endif
+   return 0;
+}
+
+static int action_right_netplay_mitm_server(unsigned type, const char *label,
+      bool wraparound)
+{
+   settings_t *settings = config_get_ptr();
+   unsigned i;
+   bool found = false;
+   unsigned list_len = ARRAY_SIZE(netplay_mitm_server_list);
+
+   for (i = 0; i < list_len; i++)
+   {
+      /* find the currently selected server in the list */
+      if (string_is_equal(settings->arrays.netplay_mitm_server, netplay_mitm_server_list[i].name))
+      {
+         /* move to the next one in the list, wrap around if necessary */
+         if (i + 1 < list_len)
+         {
+            found = true;
+            strlcpy(settings->arrays.netplay_mitm_server, netplay_mitm_server_list[i + 1].name, sizeof(settings->arrays.netplay_mitm_server));
+            break;
+         }
+         else if (wraparound)
+         {
+            found = true;
+            strlcpy(settings->arrays.netplay_mitm_server, netplay_mitm_server_list[0].name, sizeof(settings->arrays.netplay_mitm_server));
+            break;
+         }
+      }
+   }
+
+   if (!found)
+   {
+      /* current entry was invalid, go back to the start */
+      strlcpy(settings->arrays.netplay_mitm_server, netplay_mitm_server_list[0].name, sizeof(settings->arrays.netplay_mitm_server));
+   }
+
+   return 0;
+}
+
+static int action_right_shader_watch_for_changes(unsigned type, const char *label,
+      bool wraparound)
+{
+   settings_t *settings = config_get_ptr();
+   settings->bools.video_shader_watch_files = !settings->bools.video_shader_watch_files;
    return 0;
 }
 
@@ -310,7 +379,7 @@ static int playlist_association_right(unsigned type, const char *label,
    core_info_list_t           *list = NULL;
    settings_t *settings             = config_get_ptr();
    const char *path                 = path_basename(label);
-   
+
    core_info_get_list(&list);
    if (!list)
       return menu_cbs_exit();
@@ -389,7 +458,6 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
    {
       BIND_ACTION_RIGHT(cbs, action_right_cheat);
    }
-#ifdef HAVE_SHADER_MANAGER
    else if (type >= MENU_SETTINGS_SHADER_PARAMETER_0
          && type <= MENU_SETTINGS_SHADER_PARAMETER_LAST)
    {
@@ -398,14 +466,20 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
    else if (type >= MENU_SETTINGS_SHADER_PRESET_PARAMETER_0
          && type <= MENU_SETTINGS_SHADER_PRESET_PARAMETER_LAST)
    {
-      BIND_ACTION_RIGHT(cbs, shader_action_parameter_preset_right);
+      BIND_ACTION_RIGHT(cbs, shader_action_parameter_right);
    }
-#endif
    else if (type >= MENU_SETTINGS_INPUT_DESC_BEGIN
          && type <= MENU_SETTINGS_INPUT_DESC_END)
    {
       BIND_ACTION_RIGHT(cbs, action_right_input_desc);
    }
+#ifdef HAVE_KEYMAPPER
+   else if (type >= MENU_SETTINGS_INPUT_DESC_KBD_BEGIN
+      && type <= MENU_SETTINGS_INPUT_DESC_KBD_END)
+   {
+      BIND_ACTION_RIGHT(cbs, action_right_input_desc_kbd);
+   }
+#endif
    else if ((type >= MENU_SETTINGS_PLAYLIST_ASSOCIATION_START))
    {
       BIND_ACTION_RIGHT(cbs, playlist_association_right);
@@ -492,7 +566,7 @@ static int menu_cbs_init_bind_right_compare_label(menu_file_list_cbs_t *cbs,
    {
       const char *parent_group   = cbs->setting->parent_group;
 
-      if (string_is_equal(parent_group, msg_hash_to_str(MENU_ENUM_LABEL_MAIN_MENU)) 
+      if (string_is_equal(parent_group, msg_hash_to_str(MENU_ENUM_LABEL_MAIN_MENU))
                && (setting_get_type(cbs->setting) == ST_GROUP))
       {
          BIND_ACTION_RIGHT(cbs, action_right_scroll);
@@ -549,6 +623,12 @@ static int menu_cbs_init_bind_right_compare_label(menu_file_list_cbs_t *cbs,
             case MENU_ENUM_LABEL_VIDEO_SHADER_DEFAULT_FILTER:
                BIND_ACTION_RIGHT(cbs, action_right_shader_filter_default);
                break;
+            case MENU_ENUM_LABEL_NETPLAY_MITM_SERVER:
+               BIND_ACTION_RIGHT(cbs, action_right_netplay_mitm_server);
+               break;
+            case MENU_ENUM_LABEL_SHADER_WATCH_FOR_CHANGES:
+               BIND_ACTION_RIGHT(cbs, action_right_shader_watch_for_changes);
+               break;
             case MENU_ENUM_LABEL_VIDEO_SHADER_NUM_PASSES:
                BIND_ACTION_RIGHT(cbs, action_right_shader_num_passes);
                break;
@@ -564,7 +644,7 @@ static int menu_cbs_init_bind_right_compare_label(menu_file_list_cbs_t *cbs,
                break;
             case MENU_ENUM_LABEL_NO_ITEMS:
             case MENU_ENUM_LABEL_NO_PLAYLIST_ENTRIES_AVAILABLE:
-               if (  
+               if (
                      string_is_equal(menu_label, msg_hash_to_str(MENU_ENUM_LABEL_HISTORY_TAB))   ||
                      string_is_equal(menu_label, msg_hash_to_str(MENU_ENUM_LABEL_FAVORITES_TAB)) ||
                      string_is_equal(menu_label, msg_hash_to_str(MENU_ENUM_LABEL_MAIN_MENU))       ||
@@ -621,7 +701,7 @@ int menu_cbs_init_bind_right(menu_file_list_cbs_t *cbs,
       return menu_cbs_exit();
 
    BIND_ACTION_RIGHT(cbs, bind_right_generic);
-    
+
    if (type == MENU_SETTING_NO_ITEM)
    {
       if (  string_is_equal(menu_label, msg_hash_to_str(MENU_ENUM_LABEL_HISTORY_TAB))   ||

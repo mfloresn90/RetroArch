@@ -102,7 +102,7 @@ int rarch_main(int argc, char *argv[], void *data)
    rarch_ctl(RARCH_CTL_PREINIT, NULL);
    frontend_driver_init_first(args);
    rarch_ctl(RARCH_CTL_INIT, NULL);
-   
+
    if (frontend_driver_is_inited())
    {
       content_ctx_info_t info;
@@ -146,6 +146,9 @@ int rarch_main(int argc, char *argv[], void *data)
 }
 
 #ifndef HAVE_MAIN
+#ifdef __cplusplus
+extern "C"
+#endif
 int main(int argc, char *argv[])
 {
    return rarch_main(argc, argv, NULL);

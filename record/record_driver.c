@@ -114,14 +114,17 @@ void find_record_driver(void)
       recording_driver = (const record_driver_t*)record_driver_find_handle(i);
    else
    {
-      unsigned d;
+      if (verbosity_is_enabled())
+      {
+         unsigned d;
 
-      RARCH_ERR("Couldn't find any record driver named \"%s\"\n",
-            settings->arrays.record_driver);
-      RARCH_LOG_OUTPUT("Available record drivers are:\n");
-      for (d = 0; record_driver_find_handle(d); d++)
-         RARCH_LOG_OUTPUT("\t%s\n", record_driver_find_ident(d));
-      RARCH_WARN("Going to default to first record driver...\n");
+         RARCH_ERR("Couldn't find any record driver named \"%s\"\n",
+               settings->arrays.record_driver);
+         RARCH_LOG_OUTPUT("Available record drivers are:\n");
+         for (d = 0; record_driver_find_handle(d); d++)
+            RARCH_LOG_OUTPUT("\t%s\n", record_driver_find_ident(d));
+         RARCH_WARN("Going to default to first record driver...\n");
+      }
 
       recording_driver = (const record_driver_t*)record_driver_find_handle(0);
 
@@ -188,7 +191,7 @@ void recording_dump_frame(const void *data, unsigned width,
 {
    bool has_gpu_record = false;
    uint8_t *gpu_buf    = NULL;
-   struct ffemu_video_data 
+   struct ffemu_video_data
       ffemu_data       = {0};
 
    video_driver_get_record_status(&has_gpu_record,
@@ -327,7 +330,7 @@ bool recording_init(void)
       return false;
    }
 
-   if (!settings->bools.video_gpu_record 
+   if (!settings->bools.video_gpu_record
          && video_driver_is_hw_context())
    {
       RARCH_WARN("%s.\n",
@@ -358,7 +361,7 @@ bool recording_init(void)
    params.pix_fmt    = (video_driver_get_pixel_format() == RETRO_PIXEL_FORMAT_XRGB8888) ?
       FFEMU_PIX_ARGB8888 : FFEMU_PIX_RGB565;
    params.config     = NULL;
-   
+
    if (!string_is_empty(global->record.config))
       params.config = global->record.config;
 
@@ -419,12 +422,12 @@ bool recording_init(void)
       else
          params.aspect_ratio = (float)params.out_width / params.out_height;
 
-      if (settings->bools.video_post_filter_record 
+      if (settings->bools.video_post_filter_record
             && video_driver_frame_filter_alive())
       {
          unsigned max_width  = 0;
          unsigned max_height = 0;
-         
+
          params.pix_fmt    = FFEMU_PIX_RGB565;
 
          if (video_driver_frame_filter_is_32bit())

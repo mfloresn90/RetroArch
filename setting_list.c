@@ -36,59 +36,6 @@
 #include "config.def.h"
 #include "setting_list.h"
 
-rarch_setting_t setting_terminator_setting(void)
-{
-   rarch_setting_t result;
-
-   result.enum_idx                  = MSG_UNKNOWN;
-   result.type                      = ST_NONE;
-  
-   result.size                      = 0;
-
-   result.name                      = NULL;
-   result.name_hash                 = 0;
-   result.short_description         = NULL;
-   result.group                     = NULL;
-   result.subgroup                  = NULL;
-   result.parent_group              = NULL;
-   result.values                    = NULL;
-
-   result.index                     = 0;
-   result.index_offset              = 0;
-
-   result.min                       = 0.0;
-   result.max                       = 0.0;
-
-   result.flags                     = 0;
-   result.free_flags                = 0;
-
-   result.change_handler            = NULL;
-   result.read_handler              = NULL;
-   result.action_start              = NULL;
-   result.action_left               = NULL;
-   result.action_right              = NULL;
-   result.action_up                 = NULL;
-   result.action_down               = NULL;
-   result.action_cancel             = NULL;
-   result.action_ok                 = NULL;
-   result.action_select             = NULL;
-   result.get_string_representation = NULL;
-
-   result.bind_type                 = 0;
-   result.browser_selection_type    = ST_NONE;
-   result.step                      = 0.0f;
-   result.rounding_fraction         = NULL;
-   result.enforce_minrange          = false;
-   result.enforce_maxrange          = false;
-
-   result.cmd_trigger.idx           = CMD_EVENT_NONE;
-   result.cmd_trigger.triggered     = false;
-
-   result.dont_use_enum_idx_representation = false;
-
-   return result;
-}
-
 bool settings_list_append(rarch_setting_t **list,
       rarch_setting_info_t *list_info)
 {
@@ -130,7 +77,7 @@ static int setting_int_action_right_default(void *data, bool wraparound)
 {
    rarch_setting_t *setting = (rarch_setting_t*)data;
    double               max = 0.0f;
-   
+
    if (!setting)
       return -1;
 
@@ -184,6 +131,8 @@ static int setting_bind_action_start(void *data)
    bind_type    = setting_get_bind_type(setting);
    keybind->key = def_binds[bind_type - MENU_SETTINGS_BIND_BEGIN].key;
 
+   keybind->mbutton = NO_BTN;
+
    return 0;
 }
 #endif
@@ -211,14 +160,13 @@ static int setting_uint_action_left_default(void *data, bool wraparound)
    rarch_setting_t *setting = (rarch_setting_t*)data;
    double               min = 0.0f;
    bool                 overflowed = false;
-   
+
    if (!setting)
       return -1;
 
    min = setting->min;
 
    (void)wraparound; /* TODO/FIXME - handle this */
-
 
    overflowed = setting->step > *setting->value.target.unsigned_integer;
 
@@ -249,14 +197,13 @@ static int setting_uint_action_right_default(void *data, bool wraparound)
 {
    rarch_setting_t *setting = (rarch_setting_t*)data;
    double               max = 0.0f;
-   
+
    if (!setting)
       return -1;
 
    max = setting->max;
 
    (void)wraparound; /* TODO/FIXME - handle this */
-
 
    *setting->value.target.unsigned_integer =
       *setting->value.target.unsigned_integer + setting->step;
@@ -362,7 +309,7 @@ int setting_set_with_string_representation(rarch_setting_t* setting,
                   *setting->value.target.unsigned_integer = max;
             }
          }
-         break;      
+         break;
       case ST_FLOAT:
          sscanf(value, "%f", setting->value.target.fraction);
          if (flags & SD_FLAG_HAS_RANGE)
@@ -389,9 +336,9 @@ int setting_set_with_string_representation(rarch_setting_t* setting,
          strlcpy(setting->value.target.string, value, setting->size);
          break;
       case ST_BOOL:
-         if (string_is_equal_fast(value, "true", 4))
+         if (string_is_equal(value, "true"))
             *setting->value.target.boolean = true;
-         else if (string_is_equal_fast(value, "false", 5))
+         else if (string_is_equal(value, "false"))
             *setting->value.target.boolean = false;
          break;
       default:
@@ -408,20 +355,32 @@ static int setting_fraction_action_left_default(
       void *data, bool wraparound)
 {
    rarch_setting_t *setting = (rarch_setting_t*)data;
-   
+   double               min = 0.0f;
+
    if (!setting)
       return -1;
 
+   min = setting->min;
+
    (void)wraparound; /* TODO/FIXME - handle this */
 
-   *setting->value.target.fraction =
-      *setting->value.target.fraction - setting->step;
+   *setting->value.target.fraction = *setting->value.target.fraction - setting->step;
 
    if (setting->enforce_minrange)
    {
-      double min = setting->min;
       if (*setting->value.target.fraction < min)
-         *setting->value.target.fraction = min;
+      {
+         settings_t *settings = config_get_ptr();
+
+#ifdef HAVE_MENU
+      double           max = setting->max;
+
+         if (settings && settings->bools.menu_navigation_wraparound_enable)
+            *setting->value.target.fraction = max;
+         else
+#endif
+            *setting->value.target.fraction = min;
+      }
    }
 
    return 0;
@@ -440,7 +399,7 @@ static int setting_fraction_action_right_default(
 
    (void)wraparound; /* TODO/FIXME - handle this */
 
-   *setting->value.target.fraction = 
+   *setting->value.target.fraction =
       *setting->value.target.fraction + setting->step;
 
    if (setting->enforce_maxrange)
@@ -655,11 +614,10 @@ static rarch_setting_t setting_action_setting(const char* name,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = ST_ACTION;
-  
+
    result.size                      = 0;
 
    result.name                      = name;
-   result.name_hash                 = 0;
    result.short_description         = short_description;
    result.group                     = group;
    result.subgroup                  = subgroup;
@@ -718,11 +676,10 @@ static rarch_setting_t setting_group_setting(enum setting_type type, const char*
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = type;
-  
+
    result.size                      = 0;
 
    result.name                      = name;
-   result.name_hash                 = 0;
    result.short_description         = name;
    result.group                     = NULL;
    result.subgroup                  = NULL;
@@ -792,11 +749,10 @@ static rarch_setting_t setting_float_setting(const char* name,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = ST_FLOAT;
-  
+
    result.size                      = sizeof(float);
 
    result.name                      = name;
-   result.name_hash                 = 0;
    result.short_description         = short_description;
    result.group                     = group;
    result.subgroup                  = subgroup;
@@ -854,7 +810,7 @@ static rarch_setting_t setting_float_setting(const char* name,
  * @change_handler     : Function callback for change handler function pointer.
  * @read_handler       : Function callback for read handler function pointer.
  *
- * Initializes a setting of type ST_UINT. 
+ * Initializes a setting of type ST_UINT.
  *
  * Returns: setting of type ST_UINT.
  **/
@@ -869,11 +825,10 @@ static rarch_setting_t setting_uint_setting(const char* name,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = ST_UINT;
-  
+
    result.size                      = sizeof(unsigned int);
 
    result.name                      = name;
-   result.name_hash                 = 0;
    result.short_description         = short_description;
    result.group                     = group;
    result.subgroup                  = subgroup;
@@ -946,11 +901,10 @@ static rarch_setting_t setting_hex_setting(const char* name,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = ST_HEX;
-  
+
    result.size                      = sizeof(unsigned int);
 
    result.name                      = name;
-   result.name_hash                 = 0;
    result.short_description         = short_description;
    result.group                     = group;
    result.subgroup                  = subgroup;
@@ -1008,7 +962,7 @@ static rarch_setting_t setting_hex_setting(const char* name,
  * @group              : Group that the setting belongs to.
  * @subgroup           : Subgroup that the setting belongs to.
  *
- * Initializes a setting of type ST_BIND. 
+ * Initializes a setting of type ST_BIND.
  *
  * Returns: setting of type ST_BIND.
  **/
@@ -1024,11 +978,10 @@ static rarch_setting_t setting_bind_setting(const char* name,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = ST_BIND;
-  
+
    result.size                      = 0;
 
    result.name                      = name;
-   result.name_hash                 = 0;
    result.short_description         = short_description;
    result.group                     = group;
    result.subgroup                  = subgroup;
@@ -1049,7 +1002,7 @@ static rarch_setting_t setting_bind_setting(const char* name,
 #ifdef HAVE_MENU
    result.action_start              = setting_bind_action_start;
 #else
-   result.action_start              = NULL; 
+   result.action_start              = NULL;
 #endif
    result.action_left               = NULL;
    result.action_right              = NULL;
@@ -1080,26 +1033,34 @@ static rarch_setting_t setting_bind_setting(const char* name,
 
 static int setting_int_action_left_default(void *data, bool wraparound)
 {
-   double min               = 0.0f;
    rarch_setting_t *setting = (rarch_setting_t*)data;
+   double               min = 0.0f;
 
    if (!setting)
       return -1;
 
-   min               = setting->min;
+   min = setting->min;
 
    (void)wraparound; /* TODO/FIXME - handle this */
 
-   if (*setting->value.target.integer != min)
-      *setting->value.target.integer =
-         *setting->value.target.integer - setting->step;
+   *setting->value.target.integer = *setting->value.target.integer - setting->step;
 
    if (setting->enforce_minrange)
    {
       if (*setting->value.target.integer < min)
-         *setting->value.target.integer = min;
-   }
+      {
+         settings_t *settings = config_get_ptr();
 
+#ifdef HAVE_MENU
+      double           max = setting->max;
+
+         if (settings && settings->bools.menu_navigation_wraparound_enable)
+            *setting->value.target.integer = max;
+         else
+#endif
+            *setting->value.target.integer = min;
+      }
+   }
 
    return 0;
 }
@@ -1160,7 +1121,7 @@ int setting_string_action_start_generic(void *data)
  * @change_handler     : Function callback for change handler function pointer.
  * @read_handler       : Function callback for read handler function pointer.
  *
- * Initializes a string setting (of type @type). 
+ * Initializes a string setting (of type @type).
  *
  * Returns: String setting of type @type.
  **/
@@ -1176,11 +1137,10 @@ static rarch_setting_t setting_string_setting(enum setting_type type,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = type;
-  
+
    result.size                      = size;
 
    result.name                      = name;
-   result.name_hash                 = 0;
    result.short_description         = short_description;
    result.group                     = group;
    result.subgroup                  = subgroup;
@@ -1258,7 +1218,7 @@ static rarch_setting_t setting_string_setting(enum setting_type type,
  * @change_handler     : Function callback for change handler function pointer.
  * @read_handler       : Function callback for read handler function pointer.
  *
- * Initializes a string options list setting. 
+ * Initializes a string options list setting.
  *
  * Returns: string option list setting.
  **/
@@ -1298,11 +1258,10 @@ static rarch_setting_t setting_subgroup_setting(enum setting_type type,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = type;
-  
+
    result.size                      = 0;
 
    result.name                      = name;
-   result.name_hash                 = 0;
    result.short_description         = name;
    result.group                     = parent_name;
    result.parent_group              = parent_group;
@@ -1373,11 +1332,10 @@ static rarch_setting_t setting_bool_setting(const char* name,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = ST_BOOL;
-  
+
    result.size                      = sizeof(bool);
 
    result.name                      = name;
-   result.name_hash                 = name ? msg_hash_calculate(name) : 0;
    result.short_description         = short_description;
    result.group                     = group;
    result.subgroup                  = subgroup;
@@ -1437,7 +1395,7 @@ static rarch_setting_t setting_bool_setting(const char* name,
  * @change_handler     : Function callback for change handler function pointer.
  * @read_handler       : Function callback for read handler function pointer.
  *
- * Initializes a setting of type ST_INT. 
+ * Initializes a setting of type ST_INT.
  *
  * Returns: setting of type ST_INT.
  **/
@@ -1452,11 +1410,10 @@ static rarch_setting_t setting_int_setting(const char* name,
 
    result.enum_idx                  = MSG_UNKNOWN;
    result.type                      = ST_INT;
-  
+
    result.size                      = sizeof(int);
 
    result.name                      = name;
-   result.name_hash                 = name ? msg_hash_calculate(name) : 0;
    result.short_description         = short_description;
    result.group                     = group;
    result.subgroup                  = subgroup;
@@ -1526,8 +1483,6 @@ bool CONFIG_BOOL_ALT(
 
    if (!settings_list_append(list, list_info))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    if (flags != SD_FLAG_NONE)
       settings_data_list_current_add_flags(list, list_info, flags);
@@ -1562,8 +1517,6 @@ bool CONFIG_BOOL(
 
    if (!settings_list_append(list, list_info))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    if (flags != SD_FLAG_NONE)
       settings_data_list_current_add_flags(list, list_info, flags);
@@ -1597,8 +1550,6 @@ bool CONFIG_INT(
          false);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
 
 #ifdef HAVE_MENU
@@ -1626,8 +1577,6 @@ bool CONFIG_UINT_ALT(
                   true);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    return true;
 }
@@ -1654,8 +1603,6 @@ bool CONFIG_UINT(
          false);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
 
 #ifdef HAVE_MENU
@@ -1684,8 +1631,6 @@ bool CONFIG_FLOAT(
          false);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
 
 #ifdef HAVE_MENU
@@ -1717,8 +1662,6 @@ bool CONFIG_PATH(
          false);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    settings_data_list_current_add_flags(list, list_info, SD_FLAG_ALLOW_EMPTY);
 #ifdef HAVE_MENU
@@ -1741,7 +1684,7 @@ bool CONFIG_DIR(
       const char *parent_group,
       change_handler_t change_handler, change_handler_t read_handler)
 {
-   rarch_setting_t value = setting_string_setting(ST_DIR, 
+   rarch_setting_t value = setting_string_setting(ST_DIR,
          msg_hash_to_str(name_enum_idx),
          msg_hash_to_str(SHORT_enum_idx),
          target, (unsigned)len, default_value,
@@ -1751,8 +1694,6 @@ bool CONFIG_DIR(
          false);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    settings_data_list_current_add_flags(
          list,
@@ -1786,8 +1727,6 @@ bool CONFIG_STRING(
          change_handler, read_handler, false);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
 #ifdef HAVE_MENU
    menu_settings_list_current_add_enum_idx(list, list_info, name_enum_idx);
@@ -1817,8 +1756,6 @@ bool CONFIG_STRING_OPTIONS(
    if (!(settings_list_append(list, list_info)))
       return false;
 
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
 
 #ifdef HAVE_MENU
@@ -1837,7 +1774,7 @@ bool CONFIG_HEX(
       unsigned int *target,
       enum msg_hash_enums name_enum_idx,
       enum msg_hash_enums SHORT_enum_idx,
-      unsigned int default_value, 
+      unsigned int default_value,
       rarch_setting_group_info_t *group_info,
       rarch_setting_group_info_t *subgroup_info,
       const char *parent_group,
@@ -1851,8 +1788,6 @@ bool CONFIG_HEX(
          change_handler, read_handler, false);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
 
 #ifdef HAVE_MENU
@@ -1882,8 +1817,6 @@ bool CONFIG_BIND(
    if (!(settings_list_append(list, list_info)))
       return false;
 
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    /* Request name and short description to be freed later */
    settings_data_list_current_add_free_flags(list, list_info, SD_FREE_FLAG_NAME | SD_FREE_FLAG_SHORT);
@@ -1909,8 +1842,6 @@ bool CONFIG_BIND_ALT(
    if (!(settings_list_append(list, list_info)))
       return false;
 
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    /* Request name and short description to be freed later */
    settings_data_list_current_add_free_flags(list, list_info, SD_FREE_FLAG_NAME | SD_FREE_FLAG_SHORT);
@@ -1932,8 +1863,6 @@ bool CONFIG_ACTION_ALT(
 
    if (!settings_list_append(list, list_info))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    return true;
 }
@@ -1956,8 +1885,6 @@ bool CONFIG_ACTION(
 
    if (!settings_list_append(list, list_info))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
 
 #ifdef HAVE_MENU
@@ -1977,8 +1904,6 @@ bool START_GROUP(rarch_setting_t **list, rarch_setting_info_t *list_info,
    if (!(settings_list_append(list, list_info)))
       return false;
 
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    return true;
 }
@@ -1989,8 +1914,6 @@ bool END_GROUP(rarch_setting_t **list, rarch_setting_info_t *list_info,
    rarch_setting_t value = setting_group_setting (ST_END_GROUP, 0, parent_group);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    return true;
 }
@@ -2008,8 +1931,6 @@ bool START_SUB_GROUP(rarch_setting_t **list,
 
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    return true;
 }
@@ -2022,8 +1943,6 @@ bool END_SUB_GROUP(
    rarch_setting_t value = setting_group_setting (ST_END_SUB_GROUP, 0, parent_group);
    if (!(settings_list_append(list, list_info)))
       return false;
-   if (value.name)
-      value.name_hash = msg_hash_calculate(value.name);
    (*list)[list_info->index++] = value;
    return true;
 }

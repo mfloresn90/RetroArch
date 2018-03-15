@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- * 
+ *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
  *  ation, either version 3 of the License, or (at your option) any later version.
@@ -139,7 +139,7 @@ bool camera_driver_ctl(enum rarch_camera_ctl_state state, void *data)
       case RARCH_CAMERA_CTL_OWNS_DRIVER:
          return camera_driver_data_own;
       case RARCH_CAMERA_CTL_SET_ACTIVE:
-         camera_driver_active = true; 
+         camera_driver_active = true;
          break;
       case RARCH_CAMERA_CTL_FIND_DRIVER:
          {
@@ -157,14 +157,17 @@ bool camera_driver_ctl(enum rarch_camera_ctl_state state, void *data)
                camera_driver = (const camera_driver_t*)camera_driver_find_handle(i);
             else
             {
-               unsigned d;
-               RARCH_ERR("Couldn't find any camera driver named \"%s\"\n",
-                     settings->arrays.camera_driver);
-               RARCH_LOG_OUTPUT("Available camera drivers are:\n");
-               for (d = 0; camera_driver_find_handle(d); d++)
-                  RARCH_LOG_OUTPUT("\t%s\n", camera_driver_find_ident(d));
+               if (verbosity_is_enabled())
+               {
+                  unsigned d;
+                  RARCH_ERR("Couldn't find any camera driver named \"%s\"\n",
+                        settings->arrays.camera_driver);
+                  RARCH_LOG_OUTPUT("Available camera drivers are:\n");
+                  for (d = 0; camera_driver_find_handle(d); d++)
+                     RARCH_LOG_OUTPUT("\t%s\n", camera_driver_find_ident(d));
 
-               RARCH_WARN("Going to default to first camera driver...\n");
+                  RARCH_WARN("Going to default to first camera driver...\n");
+               }
 
                camera_driver = (const camera_driver_t*)camera_driver_find_handle(0);
 
@@ -174,10 +177,10 @@ bool camera_driver_ctl(enum rarch_camera_ctl_state state, void *data)
          }
          break;
       case RARCH_CAMERA_CTL_UNSET_ACTIVE:
-         camera_driver_active = false; 
+         camera_driver_active = false;
          break;
       case RARCH_CAMERA_CTL_IS_ACTIVE:
-        return camera_driver_active; 
+        return camera_driver_active;
       case RARCH_CAMERA_CTL_DEINIT:
         if (camera_data && camera_driver)
         {
@@ -191,8 +194,8 @@ bool camera_driver_ctl(enum rarch_camera_ctl_state state, void *data)
         camera_data = NULL;
         break;
       case RARCH_CAMERA_CTL_STOP:
-        if (     camera_driver 
-              && camera_driver->stop 
+        if (     camera_driver
+              && camera_driver->stop
               && camera_data)
            camera_driver->stop(camera_data);
         break;
@@ -243,6 +246,6 @@ bool camera_driver_ctl(enum rarch_camera_ctl_state state, void *data)
       default:
          break;
    }
-   
+
    return true;
 }

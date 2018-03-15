@@ -32,6 +32,7 @@
 
 #include "../../autosave.h"
 #include "../../retroarch.h"
+#include "../../input/input_driver.h"
 
 #if defined(AF_INET6) && !defined(HAVE_SOCKET_LEGACY)
 #define HAVE_INET6 1
@@ -86,11 +87,11 @@ static int init_tcp_connection(const struct addrinfo *res,
       int on = 0;
       if (res->ai_family == AF_INET6)
       {
-         if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (void*)&on, sizeof(on)) < 0)
+         if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&on, sizeof(on)) < 0)
             RARCH_WARN("Failed to listen on both IPv6 and IPv4\n");
       }
 #endif
-      if (  !socket_bind(fd, (void*)res) || 
+      if (  !socket_bind(fd, (void*)res) ||
             listen(fd, 1024) < 0)
       {
          ret = false;
@@ -177,13 +178,13 @@ static bool init_tcp_socket(netplay_t *netplay, void *direct_host,
    }
 #endif
 
-   /* If "localhost" is used, it is important to check every possible 
+   /* If "localhost" is used, it is important to check every possible
     * address for IPv4/IPv6. */
    tmp_info = res;
 
    while (tmp_info)
    {
-      struct sockaddr_storage sad;
+      struct sockaddr_storage sad = {0};
       int fd = init_tcp_connection(
             tmp_info,
             direct_host || server,
@@ -239,7 +240,7 @@ static bool netplay_init_socket_buffers(netplay_t *netplay)
     * frames of input data, plus the headers for each of them */
    size_t i;
    size_t packet_buffer_size = netplay->zbuffer_size +
-      NETPLAY_MAX_STALL_FRAMES * WORDS_PER_FRAME + (NETPLAY_MAX_STALL_FRAMES+1)*3;
+      NETPLAY_MAX_STALL_FRAMES * 16;
    netplay->packet_buffer_size = packet_buffer_size;
 
    for (i = 0; i < netplay->connections_size; i++)
@@ -409,7 +410,7 @@ static bool netplay_init_buffers(netplay_t *netplay)
  * @nick                 : Nickname of user.
  * @quirks               : Netplay quirks required for this session.
  *
- * Creates a new netplay handle. A NULL server means we're 
+ * Creates a new netplay handle. A NULL server means we're
  * hosting.
  *
  * Returns: new netplay data.
@@ -426,8 +427,6 @@ netplay_t *netplay_new(void *direct_host, const char *server, uint16_t port,
    netplay->listen_fd            = -1;
    netplay->tcp_port             = port;
    netplay->cbs                  = *cb;
-   netplay->connected_players    = 0;
-   netplay->player_max           = 1;
    netplay->is_server            = (direct_host == NULL && server == NULL);
    netplay->is_connected         = false;;
    netplay->nat_traversal        = netplay->is_server ? nat_traversal : false;
@@ -452,7 +451,7 @@ netplay_t *netplay_new(void *direct_host, const char *server, uint16_t port,
       netplay->connections[0].fd = -1;
    }
 
-   strlcpy(netplay->nick, nick[0] 
+   strlcpy(netplay->nick, nick[0]
          ? nick : RARCH_DEFAULT_NICK,
          sizeof(netplay->nick));
 
@@ -468,15 +467,33 @@ netplay_t *netplay_new(void *direct_host, const char *server, uint16_t port,
       return NULL;
    }
 
-   if (!netplay->is_server)
+   if (netplay->is_server)
    {
+      /* Clients get device info from the server */
+      unsigned i;
+      for (i = 0; i < MAX_INPUT_DEVICES; i++)
+      {
+         uint32_t dtype = input_config_get_device(i);
+         netplay->config_devices[i] = dtype;
+         if ((dtype&RETRO_DEVICE_MASK) == RETRO_DEVICE_KEYBOARD)
+         {
+            netplay->have_updown_device = true;
+            netplay_key_hton_init();
+         }
+         if (dtype != RETRO_DEVICE_NONE && !netplay_expected_input_size(netplay, 1<<i))
+            RARCH_WARN("Netplay does not support input device %u\n", i+1);
+      }
+   }
+   else
+   {
+      /* Start our handshake */
       netplay_handshake_init_send(netplay, &netplay->connections[0]);
 
       netplay->connections[0].mode = NETPLAY_CONNECTION_INIT;
       netplay->self_mode           = NETPLAY_CONNECTION_INIT;
    }
 
-   /* FIXME: Not really the right place to do this, 
+   /* FIXME: Not really the right place to do this,
     * socket initialization needs to be fixed in general. */
    if (netplay->is_server)
    {
@@ -535,8 +552,7 @@ void netplay_free(netplay_t *netplay)
    if (netplay->buffer)
    {
       for (i = 0; i < netplay->buffer_size; i++)
-         if (netplay->buffer[i].state)
-            free(netplay->buffer[i].state);
+         netplay_delta_frame_free(&netplay->buffer[i]);
 
       free(netplay->buffer);
    }

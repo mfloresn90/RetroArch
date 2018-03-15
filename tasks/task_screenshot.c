@@ -19,11 +19,6 @@
 #include "../config.h"
 #endif
 
-#ifdef _XBOX1
-#include <xtl.h>
-#include <xgraphics.h>
-#endif
-
 #include <stdio.h>
 #include <stddef.h>
 #include <time.h>
@@ -49,6 +44,7 @@
 #endif
 
 #include "../defaults.h"
+#include "../command.h"
 #include "../configuration.h"
 #include "../retroarch.h"
 #include "../paths.h"
@@ -62,24 +58,21 @@ typedef struct screenshot_task_state screenshot_task_state_t;
 
 struct screenshot_task_state
 {
-#ifdef _XBOX1
-   D3DSurface *surf;
-#endif
-   char filename[PATH_MAX_LENGTH];
-   char shotname[256];
-   uint8_t *out_buffer;
-   struct scaler_ctx scaler;
-   const void *frame;
-   unsigned width;
-   unsigned height;
-   int pitch;
    bool bgr24;
    bool silence;
-   void *userbuf;
    bool is_idle;
    bool is_paused;
    bool history_list_enable;
+   int pitch;
+   unsigned width;
+   unsigned height;
    unsigned pixel_format_type;
+   uint8_t *out_buffer;
+   const void *frame;
+   char filename[PATH_MAX_LENGTH];
+   char shotname[256];
+   void *userbuf;
+   struct scaler_ctx scaler;
 };
 
 /**
@@ -107,16 +100,12 @@ static void task_screenshot_handler(retro_task_t *task)
       free(state);
       return;
    }
-    
+
 #ifdef HAVE_RBMP
     (void)bmp_type;
 #endif
 
-#if defined(_XBOX1)
-   if (XGWriteSurfaceToFile(state->surf, state->filename) == S_OK)
-      ret = true;
-   state->surf->Release();
-#elif defined(HAVE_RPNG)
+#if defined(HAVE_RPNG)
    if (state->bgr24)
       scaler->in_fmt   = SCALER_FMT_BGR24;
    else if (state->pixel_format_type == RETRO_PIXEL_FORMAT_XRGB8888)
@@ -127,7 +116,7 @@ static void task_screenshot_handler(retro_task_t *task)
    video_frame_convert_to_bgr24(
          scaler,
          state->out_buffer,
-         (const uint8_t*)state->frame + ((int)state->height - 1) 
+         (const uint8_t*)state->frame + ((int)state->height - 1)
          * state->pitch,
          state->width, state->height,
          -state->pitch);
@@ -158,23 +147,16 @@ static void task_screenshot_handler(retro_task_t *task)
 #endif
 
 #ifdef HAVE_IMAGEVIEWER
-   if (ret && !state->silence)
-   {
-      if (
-            state->history_list_enable 
-            && g_defaults.image_history 
-            && playlist_push(
-               g_defaults.image_history,
-               state->filename,
-               NULL,
-               "builtin",
-               "imageviewer",
-               NULL,
-               NULL
-               )
+   if (  ret                        &&
+         !state->silence            &&
+         state->history_list_enable
          )
-         playlist_write_file(g_defaults.image_history);
-   }
+      command_playlist_push_write(
+            g_defaults.image_history,
+            state->filename,
+            NULL,
+            "builtin",
+            "imageviewer");
 #endif
 
    task_set_progress(task, 100);
@@ -200,9 +182,6 @@ static bool screenshot_dump(
 {
    char screenshot_path[PATH_MAX_LENGTH];
    uint8_t *buf                   = NULL;
-#ifdef _XBOX1
-   d3d_video_t *d3d               = (d3d_video_t*)video_driver_get_ptr(true);
-#endif
    settings_t *settings           = config_get_ptr();
    retro_task_t *task             = (retro_task_t*)calloc(1, sizeof(*task));
    screenshot_task_state_t *state = (screenshot_task_state_t*)
@@ -246,9 +225,7 @@ static bool screenshot_dump(
             state->shotname, sizeof(state->filename));
    }
 
-#ifdef _XBOX1
-   d3d->dev->GetBackBuffer(-1, D3DBACKBUFFER_TYPE_MONO, &state->surf);
-#elif defined(HAVE_RPNG)
+#if defined(HAVE_RPNG)
    buf = (uint8_t*)malloc(width * height * 3);
    if (!buf)
    {
@@ -327,7 +304,7 @@ static bool take_screenshot_raw(const char *name_base, void *userbuf,
    /* Negative pitch is needed as screenshot takes bottom-up,
     * but we use top-down.
     */
-   if (!screenshot_dump(name_base, 
+   if (!screenshot_dump(name_base,
          (const uint8_t*)data + (height - 1) * pitch,
          width, height, (int)(-pitch), false, userbuf, savestate, is_idle, is_paused))
       return false;

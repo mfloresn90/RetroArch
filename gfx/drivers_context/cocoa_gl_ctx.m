@@ -85,6 +85,8 @@
 #define RAScreen NSScreen
 #endif
 
+static enum gfx_ctx_api cocoagl_api = GFX_CTX_NONE;
+
 typedef struct cocoa_ctx_data
 {
    bool core_hw_context_enable; 
@@ -247,7 +249,10 @@ static void *cocoagl_gfx_ctx_init(video_frame_info_t *video_info, void *video_dr
 
 static void cocoagl_gfx_ctx_destroy(void *data)
 {
-   (void)data;
+   cocoa_ctx_data_t *cocoa_ctx = (cocoa_ctx_data_t*)data;
+
+   if (!cocoa_ctx)
+      return;
 
    [GLContextClass clearCurrentContext];
 
@@ -268,6 +273,13 @@ static void cocoagl_gfx_ctx_destroy(void *data)
 #endif
    [GLContextClass clearCurrentContext];
    g_context = nil;
+
+   free(cocoa_ctx);
+}
+
+static enum gfx_ctx_api cocoagl_gfx_ctx_get_api(void *data)
+{
+   return cocoagl_api;
 }
 
 static bool cocoagl_gfx_ctx_bind_api(void *data, enum gfx_ctx_api api, unsigned major, unsigned minor)
@@ -281,8 +293,9 @@ static bool cocoagl_gfx_ctx_bind_api(void *data, enum gfx_ctx_api api, unsigned 
       return false;
 #endif
     
-   g_minor = minor;
-   g_major = major;
+   cocoagl_api = api;
+   g_minor     = minor;
+   g_major     = major;
   
    return true;
 }
@@ -648,6 +661,7 @@ static void cocoagl_gfx_ctx_set_flags(void *data, uint32_t flags)
 const gfx_ctx_driver_t gfx_ctx_cocoagl = {
    cocoagl_gfx_ctx_init,
    cocoagl_gfx_ctx_destroy,
+   cocoagl_gfx_ctx_get_api,
    cocoagl_gfx_ctx_bind_api,
    cocoagl_gfx_ctx_swap_interval,
    cocoagl_gfx_ctx_set_video_mode,

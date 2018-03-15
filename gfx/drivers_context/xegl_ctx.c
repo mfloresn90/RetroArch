@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
 *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
 *  Copyright (C) 2011-2017 - Daniel De Matteis
-* 
+*
 *  RetroArch is free software: you can redistribute it and/or modify it under the terms
 *  of the GNU General Public License as published by the Free Software Found-
 *  ation, either version 3 of the License, or (at your option) any later version.
@@ -49,7 +49,7 @@ typedef struct
    bool should_reset_mode;
 } xegl_ctx_data_t;
 
-static enum gfx_ctx_api x_api = GFX_CTX_NONE;
+static enum gfx_ctx_api xegl_api = GFX_CTX_NONE;
 
 static int x_nul_handler(Display *dpy, XErrorEvent *event)
 {
@@ -87,7 +87,7 @@ static void gfx_ctx_xegl_destroy(void *data)
 
    free(data);
 
-   /* Do not close g_x11_dpy. We'll keep one for the entire application 
+   /* Do not close g_x11_dpy. We'll keep one for the entire application
     * lifecycle to work-around nVidia EGL limitations.
     */
 }
@@ -144,7 +144,7 @@ static void *gfx_ctx_xegl_init(video_frame_info_t *video_info, void *video_drive
    if (!xegl)
       return NULL;
 
-   switch (x_api)
+   switch (xegl_api)
    {
       case GFX_CTX_OPENGL_API:
          attrib_ptr = egl_attribs_gl;
@@ -190,7 +190,7 @@ error:
 
 static EGLint *xegl_fill_attribs(xegl_ctx_data_t *xegl, EGLint *attr)
 {
-   switch (x_api)
+   switch (xegl_api)
    {
 #ifdef EGL_KHR_create_context
       case GFX_CTX_OPENGL_API:
@@ -212,7 +212,7 @@ static EGLint *xegl_fill_attribs(xegl_ctx_data_t *xegl, EGLint *attr)
                *attr++ = xegl->egl.minor;
 
                /* Technically, we don't have core/compat until 3.2.
-                * Version 3.1 is either compat or not depending 
+                * Version 3.1 is either compat or not depending
                 * on GL_ARB_compatibility.
                 */
                if (version >= 3002)
@@ -294,7 +294,7 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
    swa.colormap = g_x11_cmap = XCreateColormap(
          g_x11_dpy, RootWindow(g_x11_dpy, vi->screen),
          vi->visual, AllocNone);
-   swa.event_mask = StructureNotifyMask | KeyPressMask | 
+   swa.event_mask = StructureNotifyMask | KeyPressMask |
       ButtonPressMask | ButtonReleaseMask | KeyReleaseMask;
    swa.override_redirect = fullscreen ? True : False;
 
@@ -337,8 +337,8 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
 
    g_x11_win = XCreateWindow(g_x11_dpy, RootWindow(g_x11_dpy, vi->screen),
          x_off, y_off, width, height, 0,
-         vi->depth, InputOutput, vi->visual, 
-         CWBorderPixel | CWColormap | CWEventMask | 
+         vi->depth, InputOutput, vi->visual,
+         CWBorderPixel | CWColormap | CWEventMask |
          (true_full ? CWOverrideRedirect : 0), &swa);
    XSetWindowBackground(g_x11_dpy, g_x11_win, 0);
 
@@ -362,14 +362,14 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
       RARCH_LOG("[X/EGL]: Using true fullscreen.\n");
       XMapRaised(g_x11_dpy, g_x11_win);
    }
-   else if (fullscreen) 
+   else if (fullscreen)
    {
       /* We attempted true fullscreen, but failed.
        * Attempt using windowed fullscreen. */
       XMapRaised(g_x11_dpy, g_x11_win);
       RARCH_LOG("[X/EGL]: Using windowed fullscreen.\n");
 
-      /* We have to move the window to the screen we 
+      /* We have to move the window to the screen we
        * want to go fullscreen on first.
        * x_off and y_off usually get ignored in XCreateWindow().
        */
@@ -380,7 +380,7 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
    {
       XMapWindow(g_x11_dpy, g_x11_win);
 
-      /* If we want to map the window on a different screen, 
+      /* If we want to map the window on a different screen,
        * we'll have to do it by force.
        *
        * Otherwise, we should try to let the window manager sort it out.
@@ -397,7 +397,7 @@ static bool gfx_ctx_xegl_set_video_mode(void *data,
    gfx_ctx_xegl_set_swap_interval(&xegl->egl, xegl->egl.interval);
 #endif
 
-   /* This can blow up on some drivers. It's not fatal, 
+   /* This can blow up on some drivers. It's not fatal,
     * so override errors for this call.
     */
    old_handler = XSetErrorHandler(x_nul_handler);
@@ -452,12 +452,17 @@ static bool gfx_ctx_xegl_has_windowed(void *data)
    return true;
 }
 
+static enum gfx_ctx_api gfx_ctx_xegl_get_api(void *data)
+{
+   return xegl_api;
+}
+
 static bool gfx_ctx_xegl_bind_api(void *video_driver,
    enum gfx_ctx_api api, unsigned major, unsigned minor)
 {
    g_egl_major  = major;
    g_egl_minor  = minor;
-   x_api        = api;
+   xegl_api     = api;
 
    switch (api)
    {
@@ -494,7 +499,7 @@ static void gfx_ctx_xegl_swap_buffers(void *data, void *data2)
 {
    xegl_ctx_data_t *xegl = (xegl_ctx_data_t*)data;
 
-   switch (x_api)
+   switch (xegl_api)
    {
       case GFX_CTX_OPENGL_API:
       case GFX_CTX_OPENGL_ES_API:
@@ -512,7 +517,7 @@ static void gfx_ctx_xegl_bind_hw_render(void *data, bool enable)
 {
    xegl_ctx_data_t *xegl = (xegl_ctx_data_t*)data;
 
-   switch (x_api)
+   switch (xegl_api)
    {
       case GFX_CTX_OPENGL_API:
       case GFX_CTX_OPENGL_ES_API:
@@ -531,7 +536,7 @@ static void gfx_ctx_xegl_set_swap_interval(void *data, unsigned swap_interval)
 {
    xegl_ctx_data_t *xegl = (xegl_ctx_data_t*)data;
 
-   switch (x_api)
+   switch (xegl_api)
    {
       case GFX_CTX_OPENGL_API:
       case GFX_CTX_OPENGL_ES_API:
@@ -547,7 +552,7 @@ static void gfx_ctx_xegl_set_swap_interval(void *data, unsigned swap_interval)
 
 static gfx_ctx_proc_t gfx_ctx_xegl_get_proc_address(const char *symbol)
 {
-   switch (x_api)
+   switch (xegl_api)
    {
       case GFX_CTX_OPENGL_ES_API:
       case GFX_CTX_OPENVG_API:
@@ -582,8 +587,9 @@ const gfx_ctx_driver_t gfx_ctx_x_egl =
 {
    gfx_ctx_xegl_init,
    gfx_ctx_xegl_destroy,
+   gfx_ctx_xegl_get_api,
    gfx_ctx_xegl_bind_api,
-   gfx_ctx_xegl_set_swap_interval, 
+   gfx_ctx_xegl_set_swap_interval,
    gfx_ctx_xegl_set_video_mode,
    x11_get_video_size,
    NULL, /* get_video_output_size */

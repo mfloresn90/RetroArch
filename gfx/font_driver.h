@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- * 
+ *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
  *  ation, either version 3 of the License, or (at your option) any later version.
@@ -30,7 +30,10 @@ enum font_driver_render_api
 {
    FONT_DRIVER_RENDER_DONT_CARE,
    FONT_DRIVER_RENDER_OPENGL_API,
-   FONT_DRIVER_RENDER_DIRECT3D_API,
+   FONT_DRIVER_RENDER_D3D8_API,
+   FONT_DRIVER_RENDER_D3D9_API,
+   FONT_DRIVER_RENDER_D3D11_API,
+   FONT_DRIVER_RENDER_D3D12_API,
    FONT_DRIVER_RENDER_VITA2D,
    FONT_DRIVER_RENDER_CTR,
    FONT_DRIVER_RENDER_WIIU,
@@ -49,10 +52,10 @@ enum text_alignment
 
 /* All coordinates and offsets are top-left oriented.
  *
- * This is a texture-atlas approach which allows text to 
+ * This is a texture-atlas approach which allows text to
  * be drawn in a single draw call.
  *
- * It is up to the code using this interface to actually 
+ * It is up to the code using this interface to actually
  * generate proper vertex buffers and upload the atlas texture to GPU. */
 
 struct font_glyph
@@ -64,7 +67,7 @@ struct font_glyph
    unsigned atlas_offset_x;
    unsigned atlas_offset_y;
 
-   /* When drawing this glyph, apply an offset to 
+   /* When drawing this glyph, apply an offset to
     * current X/Y draw coordinate. */
    int draw_offset_x;
    int draw_offset_y;
@@ -113,8 +116,9 @@ typedef struct font_renderer
 
    const struct font_glyph *(*get_glyph)(void *data, uint32_t code);
    void (*bind_block)(void *data, void *block);
-   void (*flush)(unsigned width, unsigned height, void *data);
-   
+   void (*flush)(unsigned width, unsigned height, void *data,
+         video_frame_info_t *video_info);
+
    int (*get_message_width)(void *data, const char *msg, unsigned msg_len_full, float scale);
 } font_renderer_t;
 
@@ -132,7 +136,7 @@ typedef struct font_renderer_driver
    const char *(*get_default_font)(void);
 
    const char *ident;
-   
+
    int (*get_line_height)(void* data);
 } font_renderer_driver_t;
 
@@ -146,7 +150,7 @@ typedef struct
 /* font_path can be NULL for default font. */
 int font_renderer_create_default(const void **driver,
       void **handle, const char *font_path, unsigned font_size);
-      
+
 void font_driver_render_msg(video_frame_info_t *video_info,
       void *font_data, const char *msg, const void *params);
 
@@ -154,7 +158,8 @@ void font_driver_bind_block(void *font_data, void *block);
 
 int font_driver_get_message_width(void *font_data, const char *msg, unsigned len, float scale);
 
-void font_driver_flush(unsigned width, unsigned height, void *font_data);
+void font_driver_flush(unsigned width, unsigned height, void *font_data,
+      video_frame_info_t *video_info);
 
 void font_driver_free(void *font_data);
 
@@ -182,6 +187,8 @@ extern font_renderer_t vita2d_vita_font;
 extern font_renderer_t ctr_font;
 extern font_renderer_t wiiu_font;
 extern font_renderer_t vulkan_raster_font;
+extern font_renderer_t d3d11_font;
+extern font_renderer_t d3d12_font;
 extern font_renderer_t caca_font;
 extern font_renderer_t gdi_font;
 extern font_renderer_t vga_font;

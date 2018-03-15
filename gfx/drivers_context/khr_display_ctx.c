@@ -1,6 +1,6 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2016-2017 - Hans-Kristian Arntzen
- * 
+ *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
  *  ation, either version 3 of the License, or (at your option) any later version.
@@ -27,6 +27,8 @@ typedef struct
    unsigned width;
    unsigned height;
 } khr_display_ctx_data_t;
+
+static enum gfx_ctx_api khr_api = GFX_CTX_NONE;
 
 static void gfx_ctx_khr_display_destroy(void *data)
 {
@@ -103,6 +105,8 @@ static bool gfx_ctx_khr_display_set_resize(void *data,
       return false;
    }
 
+   vulkan_acquire_next_image(&khr->vk);
+
    khr->vk.context.invalid_swapchain = true;
    khr->vk.need_new_swapchain = false;
    return false;
@@ -150,13 +154,24 @@ static void gfx_ctx_khr_display_input_driver(void *data,
    *input_data = NULL;
 }
 
+static enum gfx_ctx_api gfx_ctx_khr_display_get_api(void *data)
+{
+   return khr_api;
+}
+
 static bool gfx_ctx_khr_display_bind_api(void *data,
       enum gfx_ctx_api api, unsigned major, unsigned minor)
 {
    (void)data;
    (void)major;
    (void)minor;
-   return api == GFX_CTX_VULKAN_API;
+
+   khr_api     = api;
+
+   if (api == GFX_CTX_VULKAN_API)
+      return true;
+
+   return false;
 }
 
 static bool gfx_ctx_khr_display_has_focus(void *data)
@@ -216,6 +231,7 @@ static void *gfx_ctx_khr_display_get_context_data(void *data)
 const gfx_ctx_driver_t gfx_ctx_khr_display = {
    gfx_ctx_khr_display_init,
    gfx_ctx_khr_display_destroy,
+   gfx_ctx_khr_display_get_api,
    gfx_ctx_khr_display_bind_api,
    gfx_ctx_khr_display_set_swap_interval,
    gfx_ctx_khr_display_set_video_mode,
@@ -240,7 +256,7 @@ const gfx_ctx_driver_t gfx_ctx_khr_display = {
    "khr_display",
    gfx_ctx_khr_display_get_flags,
    gfx_ctx_khr_display_set_flags,
-   NULL, 
+   NULL,
    gfx_ctx_khr_display_get_context_data,
    NULL
 };

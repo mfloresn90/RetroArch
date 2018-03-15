@@ -23,13 +23,7 @@
 
 RETRO_BEGIN_DECLS
 
-struct video_shader *menu_shader_get();
-
-struct video_shader_parameter *menu_shader_manager_get_parameters(unsigned i);
-
-struct video_shader_pass *menu_shader_manager_get_pass(unsigned i);
-
-unsigned menu_shader_manager_get_amount_passes(void);
+struct video_shader *menu_shader_get(void);
 
 void menu_shader_manager_free(void);
 
@@ -42,13 +36,13 @@ bool menu_shader_manager_init(void);
 
 /**
  * menu_shader_manager_set_preset:
- * @shader                   : Shader handle.   
+ * @shader                   : Shader handle.
  * @type                     : Type of shader.
  * @preset_path              : Preset path to load from.
  *
  * Sets shader preset.
  **/
-void menu_shader_manager_set_preset(
+bool menu_shader_manager_set_preset(
       void *data, unsigned type, const char *preset_path);
 
 /**
@@ -63,11 +57,11 @@ bool menu_shader_manager_save_preset(
 
 /**
  * menu_shader_manager_get_type:
- * @shader                   : shader handle     
+ * @shader                   : shader handle
  *
  * Gets type of shader.
  *
- * Returns: type of shader. 
+ * Returns: type of shader.
  **/
 unsigned menu_shader_manager_get_type(const void *data);
 

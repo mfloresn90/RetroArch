@@ -161,13 +161,16 @@ static void ctr_font_render_line(
    unsigned i;
 
    ctr_vertex_t* v  = NULL;
-   ctr_video_t* ctr = (ctr_video_t*)video_driver_get_ptr(false);
+   ctr_video_t* ctr = (ctr_video_t*)video_info->userdata;
    unsigned width   = video_info->width;
    unsigned height  = video_info->height;
    int x            = roundf(pos_x * width);
    int y            = roundf((1.0f - pos_y) * height);
    int delta_x      = 0;
    int delta_y      = 0;
+
+   if (!ctr)
+      return;
 
    switch (text_align)
    {
@@ -262,7 +265,7 @@ static void ctr_font_render_line(
    GPU_SetViewport(NULL,
          VIRT_TO_PHYS(ctr->drawbuffers.top.left),
          0, 0, CTR_TOP_FRAMEBUFFER_HEIGHT,
-         ctr->video_mode == CTR_VIDEO_MODE_800x240 
+         ctr->video_mode == CTR_VIDEO_MODE_800x240
          ? CTR_TOP_FRAMEBUFFER_WIDTH * 2 : CTR_TOP_FRAMEBUFFER_WIDTH);
 
    GPU_DrawArray(GPU_GEOMETRY_PRIM, 0, v - ctr->vertex_cache.current);
@@ -441,11 +444,6 @@ static const struct font_glyph* ctr_font_get_glyph(
    return font->font_driver->get_glyph((void*)font->font_driver, code);
 }
 
-static void ctr_font_flush_block(unsigned width, unsigned height, void* data)
-{
-   (void)data;
-}
-
 static void ctr_font_bind_block(void* data, void* userdata)
 {
    (void)data;
@@ -460,6 +458,6 @@ font_renderer_t ctr_font =
    "ctrfont",
    ctr_font_get_glyph,
    ctr_font_bind_block,
-   ctr_font_flush_block,
+   NULL,                         /* flush_block */
    ctr_font_get_message_width,
 };

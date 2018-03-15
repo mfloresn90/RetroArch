@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- * 
+ *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
  *  ation, either version 3 of the License, or (at your option) any later version.
@@ -121,7 +121,7 @@ static void *alsa_init(const char *device, unsigned rate, unsigned latency,
    if (snd_pcm_hw_params(alsa->pcm, params) < 0)
       goto error;
 
-   /* Shouldn't have to bother with this, 
+   /* Shouldn't have to bother with this,
     * but some drivers are apparently broken. */
    if (snd_pcm_hw_params_get_period_size(params, &buffer_size, NULL))
       snd_pcm_hw_params_get_period_size_min(params, &buffer_size, NULL);
@@ -370,7 +370,7 @@ static void *alsa_device_list_new(void *data)
       /* description of device IOID - input / output identifcation
        * ("Input" or "Output"), NULL means both) */
 
-      if (!io || (string_is_equal_fast(io, "Output", 6)))
+      if (!io || (string_is_equal(io, "Output")))
          string_list_append(s, name, attr);
 
       if (name)

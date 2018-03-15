@@ -39,7 +39,6 @@
 
 typedef struct
 {
-   struct string_list *lpl_list;
    char content_crc[PATH_MAX_LENGTH];
    char content_path[PATH_MAX_LENGTH];
    char hostname[512];
@@ -49,6 +48,7 @@ typedef struct
    bool found;
    bool current;
    bool contentless;
+   struct string_list *lpl_list;
 } netplay_crc_handle_t;
 
 static void netplay_crc_scan_callback(void *task_data,
@@ -69,7 +69,7 @@ static void netplay_crc_scan_callback(void *task_data,
    if (!string_is_empty(state->core_path) && !string_is_empty(state->content_path)
        && !state->contentless && !state->current)
    {
-      RARCH_LOG("[lobby] loading core %s with content file %s\n", 
+      RARCH_LOG("[lobby] loading core %s with content file %s\n",
          state->core_path, state->content_path);
 
       command_event(CMD_EVENT_NETPLAY_INIT_DIRECT_DEFERRED, state->hostname);
@@ -86,7 +86,7 @@ static void netplay_crc_scan_callback(void *task_data,
    else
 #endif
    /* contentless core */
-   if (!string_is_empty(state->core_path) && !string_is_empty(state->content_path) 
+   if (!string_is_empty(state->core_path) && !string_is_empty(state->content_path)
       && state->contentless)
    {
       content_ctx_info_t content_info = {0};
@@ -112,7 +112,7 @@ static void netplay_crc_scan_callback(void *task_data,
    /* no match found */
    else
    {
-      RARCH_LOG("Couldn't find a suitable %s\n", 
+      RARCH_LOG("Couldn't find a suitable %s\n",
          string_is_empty(state->content_path) ? "content file" : "core");
       runloop_msg_queue_push(
             msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NETPLAY_LOAD_CONTENT_MANUALLY),
@@ -127,7 +127,7 @@ static void task_netplay_crc_scan_handler(retro_task_t *task)
 {
    size_t i, j;
    netplay_crc_handle_t *state = (netplay_crc_handle_t*)task->state;
-   char current[PATH_MAX_LENGTH];
+
    task_set_progress(task, 0);
    task_free_title(task);
    task_set_title(task, strdup("Looking for compatible content..."));
@@ -143,16 +143,17 @@ static void task_netplay_crc_scan_handler(retro_task_t *task)
       return;
    }
 
-   if (state->lpl_list->size == 0 && 
-      string_is_not_equal_fast(state->content_path, "N/A", 3))
+   if (state->lpl_list->size == 0 &&
+      string_is_not_equal(state->content_path, "N/A"))
       goto no_playlists;
 
    /* Core requires content */
-   if (string_is_not_equal_fast(state->content_path, "N/A", 3))
+   if (string_is_not_equal(state->content_path, "N/A"))
    {
       /* CRC matching */
       if (!string_is_equal(state->content_crc, "00000000|crc"))
       {
+         char current[PATH_MAX_LENGTH];
          RARCH_LOG("[lobby] testing CRC matching for: %s\n", state->content_crc);
 
          snprintf(current, sizeof(current), "%X|crc", content_get_crc());
@@ -250,7 +251,7 @@ filename_matching:
 
                path_remove_extension(entry);
 
-               if ( !string_is_empty(entry) && 
+               if ( !string_is_empty(entry) &&
                      string_is_equal(entry, state->content_path) &&
                      strstr(state->core_extensions, path_get_extension(playlist_path)))
                {
@@ -307,13 +308,14 @@ bool task_push_netplay_crc_scan(uint32_t crc, char* name,
 {
    unsigned i;
    union string_list_elem_attr attr;
-   core_info_list_t *info      = NULL;
-   settings_t        *settings = config_get_ptr();
-   retro_task_t          *task = (retro_task_t *)calloc(1, sizeof(*task));
-   netplay_crc_handle_t *state = (netplay_crc_handle_t*)calloc(1, sizeof(*state));
+   struct string_list *lpl_list = NULL;
+   core_info_list_t *info       = NULL;
+   settings_t        *settings  = config_get_ptr();
+   retro_task_t          *task  = (retro_task_t *)
+      calloc(1, sizeof(*task));
+   netplay_crc_handle_t *state  = (netplay_crc_handle_t*)
+      calloc(1, sizeof(*state));
 
-   core_info_get_list(&info);
-   
    if (!task || !state)
       goto error;
 
@@ -321,43 +323,58 @@ bool task_push_netplay_crc_scan(uint32_t crc, char* name,
    state->content_path[0] = '\0';
    state->hostname[0]     = '\0';
    state->core_name[0]    = '\0';
+   attr.i = 0;
 
-   snprintf(state->content_crc, sizeof(state->content_crc), "%08X|crc", crc);
+   snprintf(state->content_crc,
+         sizeof(state->content_crc),
+         "%08X|crc", crc);
 
-   strlcpy(state->content_path,  name,       sizeof(state->content_path));
-   strlcpy(state->hostname,      hostname,   sizeof(state->hostname));
-   strlcpy(state->core_name,     core_name,  sizeof(state->core_name));
+   strlcpy(state->content_path,
+         name, sizeof(state->content_path));
+   strlcpy(state->hostname,
+         hostname, sizeof(state->hostname));
+   strlcpy(state->core_name,
+         core_name, sizeof(state->core_name));
 
-   state->lpl_list = dir_list_new(settings->paths.directory_playlist,
+   lpl_list = dir_list_new(settings->paths.directory_playlist,
          NULL, true, true, true, false);
 
-   attr.i = 0;
-   string_list_append(state->lpl_list, settings->paths.path_content_history, attr);
+   if (!lpl_list)
+      goto error;
+
+   state->lpl_list = lpl_list;
+
+   string_list_append(state->lpl_list,
+         settings->paths.path_content_history, attr);
    state->found = false;
 
-   for (i=0; i < info->count; i++)
+   core_info_get_list(&info);
+
+   for (i = 0; i < info->count; i++)
    {
       /* check if the core name matches.
-         TO-DO :we could try to load the core too to check 
+         TO-DO :we could try to load the core too to check
          if the version string matches too */
 #if 0
       printf("Info: %s State: %s", info->list[i].core_name, state->core_name);
 #endif
       if(string_is_equal(info->list[i].core_name, state->core_name))
       {
-         strlcpy(state->core_path, info->list[i].path, sizeof(state->core_path));
+         strlcpy(state->core_path,
+               info->list[i].path, sizeof(state->core_path));
 
-         if (string_is_not_equal_fast(state->content_path, "N/A", 3) && 
+         if (string_is_not_equal(state->content_path, "N/A") &&
             !string_is_empty(info->list[i].supported_extensions))
          {
             strlcpy(state->core_extensions,
-                  info->list[i].supported_extensions, sizeof(state->core_extensions));
+                  info->list[i].supported_extensions,
+                  sizeof(state->core_extensions));
          }
          break;
       }
    }
 
-   /* blocking means no other task can run while this one is running, 
+   /* blocking means no other task can run while this one is running,
     * which is the default */
    task->type           = TASK_TYPE_BLOCKING;
    task->state          = state;

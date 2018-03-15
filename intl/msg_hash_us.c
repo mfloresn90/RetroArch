@@ -27,7 +27,6 @@
 
 int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
 {
-    uint32_t driver_hash = 0;
     settings_t *settings = config_get_ptr();
 
     if (msg == MENU_ENUM_LABEL_CONNECT_NETPLAY_ROOM)
@@ -56,6 +55,14 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                    " \n"
                    "Releasing button disables fast-forward."
                    );
+             break;
+          case RARCH_SLOWMOTION_KEY:
+             snprintf(s, len,
+                   "Toggles slowmotion.");
+             break;
+          case RARCH_SLOWMOTION_HOLD_KEY:
+             snprintf(s, len,
+                   "Hold for slowmotion.");
              break;
           case RARCH_PAUSE_TOGGLE:
              snprintf(s, len,
@@ -95,17 +102,9 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
              snprintf(s, len,
                    "Toggles onscreen keyboard.");
              break;
-          case RARCH_NETPLAY_FLIP:
-             snprintf(s, len,
-                   "Netplay flip users.");
-             break;
           case RARCH_NETPLAY_GAME_WATCH:
              snprintf(s, len,
                    "Netplay toggle play/spectate mode.");
-             break;
-          case RARCH_SLOWMOTION:
-             snprintf(s, len,
-                   "Hold for slowmotion.");
              break;
           case RARCH_ENABLE_HOTKEY:
              snprintf(s, len,
@@ -379,8 +378,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              " \n"
                              "If this option is disabled, \n"
                              "it will try to load even if such \n"
-                             "firmware is missing. \n"
-                             "down. \n");
+                             "firmware is missing. \n");
             break;
         case MENU_ENUM_LABEL_PARENT_DIRECTORY:
             snprintf(s, len,
@@ -716,45 +714,42 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             );
             break;
         case MENU_ENUM_LABEL_INPUT_DRIVER:
-            if (settings)
-                driver_hash = msg_hash_calculate(settings->arrays.input_driver);
+            {
+               const char *lbl = settings ? settings->arrays.input_driver : NULL;
 
-            switch (driver_hash) {
-                case MENU_LABEL_INPUT_DRIVER_UDEV:
-                    snprintf(s, len,
-                             "udev Input driver. \n"
-                                     " \n"
-                                     "It uses the recent evdev joypad API \n"
-                                     "for joystick support. It supports \n"
-                                     "hotplugging and force feedback. \n"
-                                     " \n"
-                                     "The driver reads evdev events for keyboard \n"
-                                     "support. It also supports keyboard callback, \n"
-                                     "mice and touchpads. \n"
-                                     " \n"
-                                     "By default in most distros, /dev/input nodes \n"
-                                     "are root-only (mode 600). You can set up a udev \n"
-                                     "rule which makes these accessible to non-root."
-                    );
-                    break;
-                case MENU_LABEL_INPUT_DRIVER_LINUXRAW:
-                    snprintf(s, len,
-                             "linuxraw Input driver. \n"
-                                     " \n"
-                                     "This driver requires an active TTY. Keyboard \n"
-                                     "events are read directly from the TTY which \n"
-                                     "makes it simpler, but not as flexible as udev. \n" "Mice, etc, are not supported at all. \n"
-                                     " \n"
-                                     "This driver uses the older joystick API \n"
-                                     "(/dev/input/js*).");
-                    break;
-                default:
-                    snprintf(s, len,
-                             "Input driver.\n"
-                                     " \n"
-                                     "Depending on video driver, it might \n"
-                                     "force a different input driver.");
-                    break;
+               if (string_is_equal(lbl, msg_hash_to_str(MENU_ENUM_LABEL_INPUT_DRIVER_UDEV)))
+                     snprintf(s, len,
+                           "udev Input driver. \n"
+                           " \n"
+                           "It uses the recent evdev joypad API \n"
+                           "for joystick support. It supports \n"
+                           "hotplugging and force feedback. \n"
+                           " \n"
+                           "The driver reads evdev events for keyboard \n"
+                           "support. It also supports keyboard callback, \n"
+                           "mice and touchpads. \n"
+                           " \n"
+                           "By default in most distros, /dev/input nodes \n"
+                           "are root-only (mode 600). You can set up a udev \n"
+                           "rule which makes these accessible to non-root."
+                           );
+               else if (string_is_equal(lbl,
+                        msg_hash_to_str(MENU_ENUM_LABEL_INPUT_DRIVER_LINUXRAW)))
+                     snprintf(s, len,
+                           "linuxraw Input driver. \n"
+                           " \n"
+                           "This driver requires an active TTY. Keyboard \n"
+                           "events are read directly from the TTY which \n"
+                           "makes it simpler, but not as flexible as udev. \n" "Mice, etc, are not supported at all. \n"
+                           " \n"
+                           "This driver uses the older joystick API \n"
+                           "(/dev/input/js*).");
+               else
+                     snprintf(s, len,
+                           "Input driver.\n"
+                           " \n"
+                           "Depending on video driver, it might \n"
+                           "force a different input driver.");
             }
             break;
         case MENU_ENUM_LABEL_LOAD_CONTENT_LIST:
@@ -794,7 +789,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "Current Video driver.");
 
-            if (string_is_equal_fast(settings->arrays.video_driver, "gl", 2))
+            if (string_is_equal(settings->arrays.video_driver, "gl"))
             {
                 snprintf(s, len,
                          "OpenGL Video driver. \n"
@@ -808,7 +803,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                                  "dependent on your graphics card's \n"
                                  "underlying GL driver).");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "sdl2", 4))
+            else if (string_is_equal(settings->arrays.video_driver, "sdl2"))
             {
                 snprintf(s, len,
                          "SDL 2 Video driver.\n"
@@ -820,7 +815,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                                  "core implementations is dependent \n"
                                  "on your platform SDL implementation.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "sdl1", 4))
+            else if (string_is_equal(settings->arrays.video_driver, "sdl1"))
             {
                 snprintf(s, len,
                          "SDL Video driver.\n"
@@ -831,7 +826,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                                  "Performance is considered to be suboptimal. \n"
                                  "Consider using it only as a last resort.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "d3d", 3))
+            else if (string_is_equal(settings->arrays.video_driver, "d3d"))
             {
                 snprintf(s, len,
                          "Direct3D Video driver. \n"
@@ -840,7 +835,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                                  "is dependent on your graphic card's \n"
                                  "underlying D3D driver).");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "exynos", 6))
+            else if (string_is_equal(settings->arrays.video_driver, "exynos"))
             {
                 snprintf(s, len,
                          "Exynos-G2D Video Driver. \n"
@@ -852,7 +847,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                                  "Performance for software rendered cores \n"
                                  "should be optimal.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "drm", 3))
+            else if (string_is_equal(settings->arrays.video_driver, "drm"))
             {
                 snprintf(s, len,
                          "Plain DRM Video Driver. \n"
@@ -861,7 +856,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                                  "libdrm for hardware scaling using \n"
                                  "GPU overlays.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "sunxi", 5))
+            else if (string_is_equal(settings->arrays.video_driver, "sunxi"))
             {
                 snprintf(s, len,
                          "Sunxi-G2D Video Driver. \n"
@@ -878,22 +873,19 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             );
             break;
         case MENU_ENUM_LABEL_AUDIO_RESAMPLER_DRIVER:
-            if (settings)
-                driver_hash = msg_hash_calculate(settings->arrays.audio_resampler);
+            {
+               const char *lbl = settings ? settings->arrays.audio_resampler : NULL;
 
-            switch (driver_hash) {
-                case MENU_LABEL_AUDIO_RESAMPLER_DRIVER_SINC:
-                    snprintf(s, len,
-                             "Windowed SINC implementation.");
-                    break;
-                case MENU_LABEL_AUDIO_RESAMPLER_DRIVER_CC:
-                    snprintf(s, len,
-                             "Convoluted Cosine implementation.");
-                    break;
-                default:
-                    if (string_is_empty(s))
-                        strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NO_INFORMATION_AVAILABLE), len);
-                    break;
+               if (string_is_equal(lbl, msg_hash_to_str(
+                           MENU_ENUM_LABEL_AUDIO_RESAMPLER_DRIVER_SINC)))
+                  strlcpy(s,
+                        "Windowed SINC implementation.", len);
+               else if (string_is_equal(lbl, msg_hash_to_str(
+                           MENU_ENUM_LABEL_AUDIO_RESAMPLER_DRIVER_CC)))
+                  strlcpy(s,
+                        "Convoluted Cosine implementation.", len);
+               else if (string_is_empty(s))
+                  strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NO_INFORMATION_AVAILABLE), len);
             }
             break;
         case MENU_ENUM_LABEL_VIDEO_SHADER_PRESET:
@@ -1074,6 +1066,15 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                              "menu.cgp or menu.glslp) and loaded. The file \n"
                              "persists after RetroArch exits. The file is \n"
                              "saved to Shader Directory."
+            );
+            break;
+        case MENU_ENUM_LABEL_SHADER_WATCH_FOR_CHANGES:
+            snprintf(s, len,
+                     "Watch shader files for new changes. \n"
+                     " \n"
+                     "After saving changes to a shader on disk, \n"
+                     "it will automatically be recompiled \n"
+                     "and applied to the running content."
             );
             break;
         case MENU_ENUM_LABEL_MENU_TOGGLE:
@@ -1651,9 +1652,15 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             break;
         case MENU_ENUM_LABEL_NETPLAY_USE_MITM_SERVER:
             snprintf(s, len,
-                     "When hosting, relay connection through a\n"
-                             "man-in-the-middle server\n"
-                             "to get around firewalls or NAT/UPnP issues.\n");
+                     "When hosting a netplay session, relay connection through a \n"
+                             "man-in-the-middle server \n"
+                             "to get around firewalls or NAT/UPnP issues. \n");
+            break;
+        case MENU_ENUM_LABEL_NETPLAY_MITM_SERVER:
+            snprintf(s, len,
+                     "Specifies the man-in-the-middle server \n"
+                             "to use for netplay. A server that is \n"
+                             "located closer to you may have less latency. \n");
             break;
         case MENU_ENUM_LABEL_VIDEO_MAX_SWAPCHAIN_IMAGES:
             snprintf(s, len,
@@ -1753,11 +1760,6 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "The username of the person running RetroArch. \n"
                              "This will be used for playing online games.");
-            break;
-        case MENU_ENUM_LABEL_NETPLAY_CLIENT_SWAP_INPUT:
-            snprintf(s, len,
-                     "When being client over netplay, use \n"
-                             "keybinds for player 1.");
             break;
         case MENU_ENUM_LABEL_NETPLAY_TCP_UDP_PORT:
             snprintf(s, len,
@@ -1874,10 +1876,6 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
             snprintf(s, len,
                      "Saves state.");
             break;
-        case MENU_ENUM_LABEL_NETPLAY_FLIP_PLAYERS:
-            snprintf(s, len,
-                     "Netplay flip users.");
-            break;
         case MENU_ENUM_LABEL_NETPLAY_GAME_WATCH:
             snprintf(s, len,
                      "Netplay toggle play/spectate mode.");
@@ -1915,7 +1913,7 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                      "Hold for fast-forward. Releasing button \n"
                              "disables fast-forward.");
             break;
-        case MENU_ENUM_LABEL_SLOWMOTION:
+        case MENU_ENUM_LABEL_SLOWMOTION_HOLD:
             snprintf(s, len,
                      "Hold for slowmotion.");
             break;
@@ -1990,6 +1988,38 @@ int menu_hash_get_help_us_enum(enum msg_hash_enums msg, char *s, size_t len)
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_OVERLAY_SETTINGS),
                      msg_hash_to_str(MENU_ENUM_LABEL_VALUE_INPUT_OVERLAY_HIDE_IN_MENU)
             );
+            break;
+        case MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_BGCOLOR_ENABLE:
+            snprintf(s, len,
+                     "Enables a background color for the OSD.");
+            break;
+        case MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_BGCOLOR_RED:
+            snprintf(s, len,
+                     "Sets the red value of the OSD background color. Valid values are between 0 and 255.");
+            break;
+        case MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_BGCOLOR_GREEN:
+            snprintf(s, len,
+                     "Sets the green value of the OSD background color. Valid values are between 0 and 255.");
+            break;
+        case MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_BGCOLOR_BLUE:
+            snprintf(s, len,
+                     "Sets the blue value of the OSD background color. Valid values are between 0 and 255.");
+            break;
+        case MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_BGCOLOR_OPACITY:
+            snprintf(s, len,
+                     "Sets the opacity of the OSD background color. Valid values are between 0.0 and 1.0.");
+            break;
+        case MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_COLOR_RED:
+            snprintf(s, len,
+                     "Sets the red value of the OSD text color. Valid values are between 0 and 255.");
+            break;
+        case MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_COLOR_GREEN:
+            snprintf(s, len,
+                     "Sets the green value of the OSD text color. Valid values are between 0 and 255.");
+            break;
+        case MENU_ENUM_LABEL_VALUE_VIDEO_MESSAGE_COLOR_BLUE:
+            snprintf(s, len,
+                     "Sets the blue value of the OSD text color. Valid values are between 0 and 255.");
             break;
         default:
             if (string_is_empty(s))

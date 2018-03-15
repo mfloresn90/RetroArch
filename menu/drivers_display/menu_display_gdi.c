@@ -29,30 +29,30 @@
 #include "../../gfx/common/win32_common.h"
 #endif
 
-static void *menu_display_gdi_get_default_mvp(void)
+static void *menu_display_gdi_get_default_mvp(video_frame_info_t *video_info)
 {
    return NULL;
 }
 
-static void menu_display_gdi_blend_begin(void)
+static void menu_display_gdi_blend_begin(video_frame_info_t *video_info)
 {
 }
 
-static void menu_display_gdi_blend_end(void)
+static void menu_display_gdi_blend_end(video_frame_info_t *video_info)
 {
 }
 
-static void menu_display_gdi_draw(void *data)
-{
-   (void)data;
-}
-
-static void menu_display_gdi_draw_pipeline(void *data)
+static void menu_display_gdi_draw(void *data, video_frame_info_t *video_info)
 {
    (void)data;
 }
 
-static void menu_display_gdi_viewport(void *data)
+static void menu_display_gdi_draw_pipeline(void *data, video_frame_info_t *video_info)
+{
+   (void)data;
+}
+
+static void menu_display_gdi_viewport(void *data, video_frame_info_t *video_info)
 {
    (void)data;
 }
@@ -73,7 +73,9 @@ static void menu_display_gdi_restore_clear_color(void)
    ReleaseDC(hwnd, hdc);*/
 }
 
-static void menu_display_gdi_clear_color(menu_display_ctx_clearcolor_t *clearcolor)
+static void menu_display_gdi_clear_color(
+      menu_display_ctx_clearcolor_t *clearcolor,
+      video_frame_info_t *video_info)
 {
    (void)clearcolor;
 
@@ -86,11 +88,12 @@ static bool menu_display_gdi_font_init_first(
       bool is_threaded)
 {
    font_data_t **handle = (font_data_t**)font_handle;
-   *handle = font_driver_init_first(video_data,
+   if (!(*handle = font_driver_init_first(video_data,
          font_path, font_size, true,
          is_threaded,
-         FONT_DRIVER_RENDER_GDI);
-   return *handle;
+         FONT_DRIVER_RENDER_GDI)))
+		 return false;
+   return true;
 }
 
 static const float *menu_display_gdi_get_default_vertices(void)
@@ -119,4 +122,5 @@ menu_display_ctx_driver_t menu_display_ctx_gdi = {
    menu_display_gdi_font_init_first,
    MENU_VIDEO_DRIVER_GDI,
    "menu_display_gdi",
+   false
 };

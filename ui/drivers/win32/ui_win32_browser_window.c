@@ -19,7 +19,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../../gfx/common/win32_common.h"
 #include <windows.h>
+#include <commdlg.h>
+#include <commctrl.h>
 
 #include "../../ui_companion_driver.h"
 
@@ -51,7 +54,7 @@ static bool ui_browser_window_win32_core(ui_browser_window_state_t *state, bool 
    ofn.pvReserved        = NULL;
    ofn.dwReserved        = 0;
    ofn.FlagsEx           = 0;
-#endif 
+#endif
 
    if (!save && !GetOpenFileName(&ofn))
       return false;

@@ -206,6 +206,14 @@ enum menu_settings_type
    MENU_SETTINGS_CHEAT_END = MENU_SETTINGS_CHEAT_BEGIN + (MAX_CHEAT_COUNTERS - 1),
    MENU_SETTINGS_INPUT_DESC_BEGIN,
    MENU_SETTINGS_INPUT_DESC_END = MENU_SETTINGS_INPUT_DESC_BEGIN + (MAX_USERS * (RARCH_FIRST_CUSTOM_BIND + 4)),
+   MENU_SETTINGS_INPUT_DESC_KBD_BEGIN,
+   MENU_SETTINGS_INPUT_DESC_KBD_END = MENU_SETTINGS_INPUT_DESC_KBD_BEGIN + 135,
+
+   MENU_SETTINGS_SUBSYSTEM_LOAD,
+
+   MENU_SETTINGS_SUBSYSTEM_ADD,
+   MENU_SETTINGS_SUBSYSTEM_LAST = MENU_SETTINGS_SUBSYSTEM_ADD + RARCH_MAX_SUBSYSTEMS,
+
    MENU_SETTINGS_LAST
 };
 
@@ -232,7 +240,9 @@ enum xmb_color_theme
    XMB_THEME_UNDERSEA,
    XMB_THEME_VOLCANIC_RED,
    XMB_THEME_DARK,
+   XMB_THEME_LIGHT,
    XMB_THEME_WALLPAPER,
+   XMB_THEME_MORNING_BLUE,
    XMB_THEME_LAST
 };
 
@@ -246,6 +256,8 @@ enum xmb_icon_theme
    XMB_ICON_THEME_SYSTEMATIC,
    XMB_ICON_THEME_DOTART,
    XMB_ICON_THEME_CUSTOM,
+   XMB_ICON_THEME_RETROSYSTEM,
+   XMB_ICON_THEME_MONOCHROME_INVERTED,
    XMB_ICON_THEME_LAST
 };
 
@@ -257,6 +269,7 @@ enum xmb_shader_pipeline
    XMB_SHADER_PIPELINE_SIMPLE_SNOW,
    XMB_SHADER_PIPELINE_SNOW,
    XMB_SHADER_PIPELINE_BOKEH,
+   XMB_SHADER_PIPELINE_SNOWFLAKE,
    XMB_SHADER_PIPELINE_LAST
 };
 
@@ -272,7 +285,10 @@ enum menu_display_driver_type
    MENU_VIDEO_DRIVER_GENERIC = 0,
    MENU_VIDEO_DRIVER_OPENGL,
    MENU_VIDEO_DRIVER_VULKAN,
-   MENU_VIDEO_DRIVER_DIRECT3D,
+   MENU_VIDEO_DRIVER_DIRECT3D8,
+   MENU_VIDEO_DRIVER_DIRECT3D9,
+   MENU_VIDEO_DRIVER_DIRECT3D11,
+   MENU_VIDEO_DRIVER_DIRECT3D12,
    MENU_VIDEO_DRIVER_VITA2D,
    MENU_VIDEO_DRIVER_CTR,
    MENU_VIDEO_DRIVER_WIIU,
@@ -306,20 +322,21 @@ typedef struct menu_display_frame_info
 typedef struct menu_display_ctx_driver
 {
    /* Draw graphics to the screen. */
-   void (*draw)(void *data);
+   void (*draw)(void *data, video_frame_info_t *video_info);
    /* Draw one of the menu pipeline shaders. */
-   void (*draw_pipeline)(void *data);
-   void (*viewport)(void *data);
+   void (*draw_pipeline)(void *data, video_frame_info_t *video_info);
+   void (*viewport)(void *data, video_frame_info_t *video_info);
    /* Start blending operation. */
-   void (*blend_begin)(void);
+   void (*blend_begin)(video_frame_info_t *video_info);
    /* Finish blending operation. */
-   void (*blend_end)(void);
+   void (*blend_end)(video_frame_info_t *video_info);
    /* Set the clear color back to its default values. */
    void (*restore_clear_color)(void);
    /* Set the color to be used when clearing the screen */
-   void (*clear_color)(menu_display_ctx_clearcolor_t *clearcolor);
+   void (*clear_color)(menu_display_ctx_clearcolor_t *clearcolor,
+         video_frame_info_t *video_info);
    /* Get the default Model-View-Projection matrix */
-   void *(*get_default_mvp)(void);
+   void *(*get_default_mvp)(video_frame_info_t *video_info);
    /* Get the default vertices matrix */
    const float *(*get_default_vertices)(void);
    /* Get the default texture coordinates matrix */
@@ -331,11 +348,15 @@ typedef struct menu_display_ctx_driver
          bool is_threaded);
    enum menu_display_driver_type type;
    const char *ident;
+   bool handles_transform;
 } menu_display_ctx_driver_t;
 
 
 typedef struct
 {
+   uint64_t state;
+
+   char menu_state_msg[1024];
    /* Scratchpad variables. These are used for instance
     * by the filebrowser when having to store intermediary
     * paths (subdirs/previous dirs/current dir/path, etc).
@@ -343,13 +364,6 @@ typedef struct
    char deferred_path[PATH_MAX_LENGTH];
    char scratch_buf[PATH_MAX_LENGTH];
    char scratch2_buf[PATH_MAX_LENGTH];
-
-   uint64_t state;
-
-   struct
-   {
-      char msg[1024];
-   } menu_state;
 
    /* path to the currently loaded database playlist file. */
    char db_playlist_file[PATH_MAX_LENGTH];
@@ -359,16 +373,16 @@ typedef struct menu_display_ctx_draw
 {
    float x;
    float y;
-   unsigned width;
-   unsigned height;
-   struct video_coords *coords;
-   void *matrix_data;
-   uintptr_t texture;
-   enum menu_display_prim_type prim_type;
    float *color;
    const float *vertex;
    const float *tex_coord;
+   unsigned width;
+   unsigned height;
+   uintptr_t texture;
    size_t vertex_count;
+   struct video_coords *coords;
+   void *matrix_data;
+   enum menu_display_prim_type prim_type;
    struct
    {
       unsigned id;
@@ -376,16 +390,18 @@ typedef struct menu_display_ctx_draw
       size_t backend_data_size;
       bool active;
    } pipeline;
+   float rotation;
+   float scale_factor;
 } menu_display_ctx_draw_t;
 
 typedef struct menu_display_ctx_rotate_draw
 {
-   math_matrix_4x4 *matrix;
+   bool scale_enable;
    float rotation;
    float scale_x;
    float scale_y;
    float scale_z;
-   bool scale_enable;
+   math_matrix_4x4 *matrix;
 } menu_display_ctx_rotate_draw_t;
 
 typedef struct menu_display_ctx_coord_draw
@@ -536,21 +552,21 @@ typedef struct menu_ctx_pointer
    unsigned x;
    unsigned y;
    unsigned ptr;
-   menu_file_list_cbs_t *cbs;
-   menu_entry_t *entry;
    unsigned action;
    int retcode;
+   menu_file_list_cbs_t *cbs;
+   menu_entry_t *entry;
 } menu_ctx_pointer_t;
 
 typedef struct menu_ctx_bind
 {
-   menu_file_list_cbs_t *cbs;
    const char *path;
    const char *label;
    unsigned type;
-   size_t idx;
    uint32_t label_hash;
+   size_t idx;
    int retcode;
+   menu_file_list_cbs_t *cbs;
 } menu_ctx_bind_t;
 
 /**
@@ -629,8 +645,8 @@ void menu_navigation_set_selection(size_t val);
 enum menu_toggle_reason menu_display_toggle_get_reason(void);
 void menu_display_toggle_set_reason(enum menu_toggle_reason reason);
 
-void menu_display_blend_begin(void);
-void menu_display_blend_end(void);
+void menu_display_blend_begin(video_frame_info_t *video_info);
+void menu_display_blend_end(video_frame_info_t *video_info);
 
 void menu_display_font_free(font_data_t *font);
 
@@ -662,10 +678,13 @@ void menu_display_unset_framebuffer_dirty_flag(void);
 float menu_display_get_dpi(void);
 bool menu_display_init_first_driver(bool video_is_threaded);
 bool menu_display_restore_clear_color(void);
-void menu_display_clear_color(menu_display_ctx_clearcolor_t *color);
-void menu_display_draw(menu_display_ctx_draw_t *draw);
+void menu_display_clear_color(menu_display_ctx_clearcolor_t *color,
+      video_frame_info_t *video_info);
+void menu_display_draw(menu_display_ctx_draw_t *draw,
+      video_frame_info_t *video_info);
 
-void menu_display_draw_pipeline(menu_display_ctx_draw_t *draw);
+void menu_display_draw_pipeline(menu_display_ctx_draw_t *draw,
+      video_frame_info_t *video_info);
 void menu_display_draw_bg(
       menu_display_ctx_draw_t *draw,
       video_frame_info_t *video_info,
@@ -673,16 +692,23 @@ void menu_display_draw_bg(
 void menu_display_draw_gradient(
       menu_display_ctx_draw_t *draw,
       video_frame_info_t *video_info);
-void menu_display_draw_quad(int x, int y, unsigned w, unsigned h,
+void menu_display_draw_quad(
+      video_frame_info_t *video_info,
+      int x, int y, unsigned w, unsigned h,
       unsigned width, unsigned height,
       float *color);
-void menu_display_draw_texture(int x, int y, unsigned w, unsigned h,
+void menu_display_draw_texture(
+      video_frame_info_t *video_info,
+      int x, int y, unsigned w, unsigned h,
       unsigned width, unsigned height,
       float *color, uintptr_t texture);
-void menu_display_draw_texture_slice(int x, int y, unsigned w, unsigned h,
+void menu_display_draw_texture_slice(
+      video_frame_info_t *video_info,
+      int x, int y, unsigned w, unsigned h,
       unsigned new_w, unsigned new_h, unsigned width, unsigned height,
       float *color, unsigned offset, float scale_factor, uintptr_t texture);
-void menu_display_rotate_z(menu_display_ctx_rotate_draw_t *draw);
+void menu_display_rotate_z(menu_display_ctx_rotate_draw_t *draw,
+      video_frame_info_t *video_info);
 bool menu_display_get_tex_coords(menu_display_ctx_coord_draw_t *draw);
 
 void menu_display_timedate(menu_display_ctx_datetime_t *datetime);
@@ -706,6 +732,7 @@ void menu_display_snow(int width, int height);
 void menu_display_allocate_white_texture(void);
 
 void menu_display_draw_cursor(
+      video_frame_info_t *video_info,
       float *color, float cursor_size, uintptr_t texture,
       float x, float y, unsigned width, unsigned height);
 
@@ -729,7 +756,10 @@ extern uintptr_t menu_display_white_texture;
 
 extern menu_display_ctx_driver_t menu_display_ctx_gl;
 extern menu_display_ctx_driver_t menu_display_ctx_vulkan;
-extern menu_display_ctx_driver_t menu_display_ctx_d3d;
+extern menu_display_ctx_driver_t menu_display_ctx_d3d8;
+extern menu_display_ctx_driver_t menu_display_ctx_d3d9;
+extern menu_display_ctx_driver_t menu_display_ctx_d3d11;
+extern menu_display_ctx_driver_t menu_display_ctx_d3d12;
 extern menu_display_ctx_driver_t menu_display_ctx_vita2d;
 extern menu_display_ctx_driver_t menu_display_ctx_ctr;
 extern menu_display_ctx_driver_t menu_display_ctx_wiiu;

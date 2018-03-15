@@ -2,7 +2,7 @@
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011 2017 - Daniel De Matteis
  *  Copyright (C) 2014 2015 - Jean-Andre Santoni
- * 
+ *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
  *  ation, either version 3 of the License, or (at your option) any later version.
@@ -41,6 +41,8 @@ typedef struct
    bool resize;
    unsigned width, height;
 } vivante_ctx_data_t;
+
+static enum gfx_ctx_api viv_api = GFX_CTX_NONE;
 
 static void gfx_ctx_vivante_destroy(void *data)
 {
@@ -190,11 +192,20 @@ static void gfx_ctx_vivante_input_driver(void *data,
    *input_data = NULL;
 }
 
+static enum gfx_ctx_api gfx_ctx_vivante_get_api(void *data)
+{
+   return viv_api;
+}
+
 static bool gfx_ctx_vivante_bind_api(void *data,
       enum gfx_ctx_api api, unsigned major, unsigned minor)
 {
-   (void)data;
-   return api == GFX_CTX_OPENGL_ES_API;
+
+   viv_api = api;
+
+   if (api == GFX_CTX_OPENGL_ES_API)
+      return true;
+   return false;
 }
 
 static bool gfx_ctx_vivante_has_focus(void *data)
@@ -261,6 +272,7 @@ static void gfx_ctx_vivante_set_flags(void *data, uint32_t flags)
 const gfx_ctx_driver_t gfx_ctx_vivante_fbdev = {
    gfx_ctx_vivante_init,
    gfx_ctx_vivante_destroy,
+   gfx_ctx_vivante_get_api,
    gfx_ctx_vivante_bind_api,
    gfx_ctx_vivante_set_swap_interval,
    gfx_ctx_vivante_set_video_mode,

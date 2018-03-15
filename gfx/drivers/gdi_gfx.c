@@ -67,7 +67,7 @@ static void gdi_gfx_create(void)
 
    ctx->get_os(os, sizeof(os), &gdi_win_major, &gdi_win_minor);
 
-   // Are we running on Windows 98 or below?
+   /* Are we running on Windows 98 or below? */
    if (gdi_win_major < 4 || (gdi_win_major == 4 && gdi_win_minor <= 10))
    {
       RARCH_LOG("[GDI] Win98 or lower detected, using slow frame conversion method for RGB444.\n");
@@ -356,7 +356,8 @@ static bool gdi_gfx_alive(void *data)
    unsigned temp_height = 0;
    bool quit            = false;
    bool resize          = false;
- 
+   bool ret             = false;
+
    /* Needed because some context drivers don't track their sizes */
    video_driver_get_size(&temp_width, &temp_height);
 
@@ -365,12 +366,13 @@ static bool gdi_gfx_alive(void *data)
    size_data.width      = &temp_width;
    size_data.height     = &temp_height;
 
-   video_context_driver_check_window(&size_data);
+   if (video_context_driver_check_window(&size_data))
+      ret = !quit;
 
    if (temp_width != 0 && temp_height != 0)
       video_driver_set_size(&temp_width, &temp_height);
 
-   return true;
+   return ret;
 }
 
 static bool gdi_gfx_focus(void *data)
@@ -491,7 +493,7 @@ static void gdi_set_texture_frame(void *data,
    }
 }
 
-static void gdi_set_osd_msg(void *data, 
+static void gdi_set_osd_msg(void *data,
       video_frame_info_t *video_info,
       const char *msg,
       const void *params, void *font)
@@ -531,6 +533,8 @@ static void gdi_set_video_mode(void *data, unsigned width, unsigned height,
 }
 
 static const video_poke_interface_t gdi_poke_interface = {
+   NULL,                      /* set_coords */
+   NULL,                      /* set_mvp */
    NULL,
    NULL,
    gdi_set_video_mode,
@@ -538,30 +542,18 @@ static const video_poke_interface_t gdi_poke_interface = {
    gdi_get_video_output_size,
    gdi_get_video_output_prev,
    gdi_get_video_output_next,
-#ifdef HAVE_FBO
-   NULL,
-#else
-   NULL,
-#endif
    NULL,
    NULL,
    NULL,
-#if defined(HAVE_MENU)
+   NULL,
    gdi_set_texture_frame,
    NULL,
    gdi_set_osd_msg,
    NULL,
-#else
-   NULL,
-   NULL,
-   NULL,
-   NULL,
-#endif
-
-   NULL,
-#ifdef HAVE_MENU
-   NULL,
-#endif
+   NULL,                         /* grab_mouse_toggle */
+   NULL,                         /* get_current_shader */
+   NULL,                         /* get_current_software_framebuffer */
+   NULL                          /* get_hw_render_interface */
 };
 
 static void gdi_gfx_get_poke_interface(void *data,

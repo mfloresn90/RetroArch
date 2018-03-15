@@ -1,7 +1,7 @@
 /*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2010-2014 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
- * 
+ *
  *  RetroArch is free software: you can redistribute it and/or modify it under the terms
  *  of the GNU General Public License as published by the Free Software Found-
  *  ation, either version 3 of the License, or (at your option) any later version.
@@ -21,10 +21,6 @@
 /* necessary for mingw32 multimon defines: */
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0500 //_WIN32_WINNT_WIN2K
-#endif
-
-#if !defined(_MSC_VER) || _MSC_VER > 1400
-#define UNICODE
 #endif
 
 #include <tchar.h>
@@ -104,7 +100,14 @@ static unsigned         win32_minor       = 0;
 static unsigned         win32_interval    = 0;
 static enum gfx_ctx_api win32_api         = GFX_CTX_NONE;
 
+#ifdef HAVE_DYNAMIC
 static dylib_t          dll_handle        = NULL; /* Handle to OpenGL32.dll */
+#endif
+
+typedef struct gfx_ctx_cgl_data
+{
+   void *empty;
+} gfx_ctx_wgl_data_t;
 
 static gfx_ctx_proc_t gfx_ctx_wgl_get_proc_address(const char *symbol)
 {
@@ -123,7 +126,11 @@ static gfx_ctx_proc_t gfx_ctx_wgl_get_proc_address(const char *symbol)
          break;
    }
 
+#ifdef HAVE_DYNAMIC
    return (gfx_ctx_proc_t)GetProcAddress((HINSTANCE)dll_handle, symbol);
+#else
+   return NULL;
+#endif
 }
 
 #if defined(HAVE_OPENGL)
@@ -163,9 +170,9 @@ static void create_gl_context(HWND hwnd, bool *quit)
    else
    {
       win32_hrc = wglCreateContext(win32_hdc);
-      
+
       /* We'll create shared context later if not. */
-      if (win32_hrc && !core_context && !debug) 
+      if (win32_hrc && !core_context && !debug)
       {
          win32_hw_hrc = wglCreateContext(win32_hdc);
          if (win32_hw_hrc)
@@ -207,7 +214,7 @@ static void create_gl_context(HWND hwnd, bool *quit)
          *aptr++ = win32_minor;
 
          /* Technically, we don't have core/compat until 3.2.
-          * Version 3.1 is either compat or not depending 
+          * Version 3.1 is either compat or not depending
           * on GL_ARB_compatibility.
           */
          if ((win32_major * 1000 + win32_minor) >= 3002)
@@ -284,7 +291,7 @@ void create_graphics_context(HWND hwnd, bool *quit)
          height   = rect.bottom - rect.top;
 
          if (!vulkan_surface_create(&win32_vk, VULKAN_WSI_WIN32,
-                  &instance, &hwnd, 
+                  &instance, &hwnd,
                   width, height, win32_interval))
             *quit = true;
 
@@ -399,6 +406,7 @@ static bool gfx_ctx_wgl_set_resize(void *data,
             return false;
          }
 
+         vulkan_acquire_next_image(&win32_vk);
          win32_vk.context.invalid_swapchain = true;
          win32_vk.need_new_swapchain        = false;
 #endif
@@ -414,17 +422,17 @@ static bool gfx_ctx_wgl_set_resize(void *data,
 
 static void gfx_ctx_wgl_update_title(void *data, void *data2)
 {
-   const ui_window_t *window = ui_companion_driver_get_window_ptr();
+   char title[128];
 
-   if (window)
+   title[0] = '\0';
+
+   video_driver_get_window_title(title, sizeof(title));
+
+   if (title[0])
    {
-      char title[128];
+      const ui_window_t *window = ui_companion_driver_get_window_ptr();
 
-      title[0] = '\0';
-
-      video_driver_get_window_title(title, sizeof(title));
-
-      if (title[0])
+      if (window)
          window->set_title(&main_window, title);
    }
 }
@@ -457,28 +465,32 @@ static void gfx_ctx_wgl_get_video_size(void *data,
 
 static void *gfx_ctx_wgl_init(video_frame_info_t *video_info, void *video_driver)
 {
-   WNDCLASSEX wndclass = {0};
+   WNDCLASSEX wndclass     = {0};
+   gfx_ctx_wgl_data_t *wgl = (gfx_ctx_wgl_data_t*)calloc(1, sizeof(*wgl));
 
-   (void)video_driver;
-
-   if (g_inited)
+   if (!wgl)
       return NULL;
 
+   if (g_inited)
+      goto error;
+
+#ifdef HAVE_DYNAMIC
    dll_handle = dylib_load("OpenGL32.dll");
-   
+#endif
+
    win32_window_reset();
    win32_monitor_init();
 
    wndclass.lpfnWndProc   = WndProcGL;
    if (!win32_window_init(&wndclass, true, NULL))
-           return NULL;
+      goto error;
 
    switch (win32_api)
    {
       case GFX_CTX_VULKAN_API:
 #ifdef HAVE_VULKAN
          if (!vulkan_context_init(&win32_vk, VULKAN_WSI_WIN32))
-            return NULL;
+            goto error;
 #endif
          break;
       case GFX_CTX_NONE:
@@ -486,14 +498,18 @@ static void *gfx_ctx_wgl_init(video_frame_info_t *video_info, void *video_driver
          break;
    }
 
-   return (void*)"wgl";
+   return wgl;
+
+error:
+   if (wgl)
+      free(wgl);
+   return NULL;
 }
 
 static void gfx_ctx_wgl_destroy(void *data)
 {
-   HWND     window  = win32_get_window();
-
-   (void)data;
+   HWND            window  = win32_get_window();
+   gfx_ctx_wgl_data_t *wgl = (gfx_ctx_wgl_data_t*)data;
 
    switch (win32_api)
    {
@@ -548,7 +564,12 @@ static void gfx_ctx_wgl_destroy(void *data)
       g_restore_desktop     = false;
    }
 
+#ifdef HAVE_DYNAMIC
    dylib_close(dll_handle);
+#endif
+
+   if (wgl)
+      free(wgl);
 
    win32_core_hw_context_enable = false;
    g_inited                     = false;
@@ -595,12 +616,12 @@ static void gfx_ctx_wgl_input_driver(void *data,
 
 #if _WIN32_WINNT >= 0x0501
    /* winraw only available since XP */
-   if (string_is_equal_fast(settings->arrays.input_driver, "raw", 4))
+   if (string_is_equal(settings->arrays.input_driver, "raw"))
    {
       *input_data = input_winraw.init(joypad_name);
       if (*input_data)
       {
-         *input = &input_winraw;
+         *input     = &input_winraw;
          dinput_wgl = NULL;
          return;
       }
@@ -634,6 +655,11 @@ static bool gfx_ctx_wgl_get_metrics(void *data,
 	enum display_metric_types type, float *value)
 {
    return win32_get_metrics(data, type, value);
+}
+
+static enum gfx_ctx_api gfx_ctx_wgl_get_api(void *data)
+{
+   return win32_api;
 }
 
 static bool gfx_ctx_wgl_bind_api(void *data,
@@ -727,6 +753,7 @@ static void gfx_ctx_wgl_get_video_output_next(void *data)
 const gfx_ctx_driver_t gfx_ctx_wgl = {
    gfx_ctx_wgl_init,
    gfx_ctx_wgl_destroy,
+   gfx_ctx_wgl_get_api,
    gfx_ctx_wgl_bind_api,
    gfx_ctx_wgl_swap_interval,
    gfx_ctx_wgl_set_video_mode,

@@ -1,4 +1,4 @@
-/*  RetroArch - A frontend for libretro.
+﻿/*  RetroArch - A frontend for libretro.
  *  Copyright (C) 2016-2017 - Hans-Kristian Arntzen
  *  Copyright (C) 2011-2017 - Daniel De Matteis
  *
@@ -48,9 +48,9 @@ static const float vk_colors[] = {
    1.0f, 1.0f, 1.0f, 1.0f,
 };
 
-static void *menu_display_vk_get_default_mvp(void)
+static void *menu_display_vk_get_default_mvp(video_frame_info_t *video_info)
 {
-   vk_t *vk = (vk_t*)video_driver_get_ptr(false);
+   vk_t *vk = video_info ? (vk_t*)video_info->userdata : NULL;
    if (!vk)
       return NULL;
    return &vk->mvp_no_rot;
@@ -99,10 +99,12 @@ static unsigned to_menu_pipeline(
 }
 #endif
 
-static void menu_display_vk_viewport(void *data)
+static void menu_display_vk_viewport(void *data,
+      video_frame_info_t *video_info)
 {
    menu_display_ctx_draw_t *draw = (menu_display_ctx_draw_t*)data;
-   vk_t *vk                      = (vk_t*)video_driver_get_ptr(false);
+   vk_t *vk                      = video_info ? (vk_t*)video_info->userdata 
+      : NULL;
 
    if (!vk || !draw)
       return;
@@ -115,13 +117,13 @@ static void menu_display_vk_viewport(void *data)
    vk->vk_vp.maxDepth = 1.0f;
 }
 
-static void menu_display_vk_draw_pipeline(void *data)
+static void menu_display_vk_draw_pipeline(void *data, video_frame_info_t *video_info)
 {
 #ifdef HAVE_SHADERPIPELINE
    float output_size[2];
    menu_display_ctx_draw_t *draw = (menu_display_ctx_draw_t*)data;
-   vk_t *vk                      = (vk_t*)video_driver_get_ptr(false);
    video_coord_array_t *ca       = NULL;
+   vk_t *vk                      = video_info ? (vk_t*)video_info->userdata : NULL;
 
    static uint8_t ubo_scratch_data[768];
    static float t                = 0.0f;
@@ -160,8 +162,12 @@ static void menu_display_vk_draw_pipeline(void *data)
          draw->pipeline.backend_data_size = sizeof(math_matrix_4x4) + 3 * sizeof(float);
 
          /* Match UBO layout in shader. */
-         memcpy(ubo_scratch_data, menu_display_vk_get_default_mvp(), sizeof(math_matrix_4x4));
-         memcpy(ubo_scratch_data + sizeof(math_matrix_4x4), output_size, sizeof(output_size));
+         memcpy(ubo_scratch_data,
+               menu_display_vk_get_default_mvp(video_info),
+               sizeof(math_matrix_4x4));
+         memcpy(ubo_scratch_data + sizeof(math_matrix_4x4),
+               output_size,
+               sizeof(output_size));
          memcpy(ubo_scratch_data + sizeof(math_matrix_4x4) + 2 * sizeof(float), &t, sizeof(t));
          draw->coords = &blank_coords;
          blank_coords.vertices = 4;
@@ -173,7 +179,7 @@ static void menu_display_vk_draw_pipeline(void *data)
 #endif
 }
 
-static void menu_display_vk_draw(void *data)
+static void menu_display_vk_draw(void *data, video_frame_info_t *video_info)
 {
    unsigned i;
    struct vk_buffer_range range;
@@ -183,7 +189,7 @@ static void menu_display_vk_draw(void *data)
    const float *color            = NULL;
    struct vk_vertex *pv          = NULL;
    menu_display_ctx_draw_t *draw = (menu_display_ctx_draw_t*)data;
-   vk_t *vk                      = (vk_t*)video_driver_get_ptr(false);
+   vk_t *vk                      = video_info ? (vk_t*)video_info->userdata : NULL;
 
    if (!vk || !draw)
       return;
@@ -204,7 +210,8 @@ static void menu_display_vk_draw(void *data)
    if (!color)
       color           = menu_display_vk_get_default_color();
 
-   menu_display_vk_viewport(draw);
+   menu_display_vk_viewport(draw, video_info);
+
    vk->tracker.dirty |= VULKAN_DIRTY_DYNAMIC_BIT;
 
    /* Bake interleaved VBO. Kinda ugly, we should probably try to move to
@@ -217,7 +224,8 @@ static void menu_display_vk_draw(void *data)
    for (i = 0; i < draw->coords->vertices; i++, pv++)
    {
       pv->x       = *vertex++;
-      pv->y       = 1.0f - (*vertex++); /* Y-flip. Vulkan is top-left clip space */
+      /* Y-flip. Vulkan is top-left clip space */
+      pv->y       = 1.0f - (*vertex++);
       pv->tex_x   = *tex_coord++;
       pv->tex_y   = *tex_coord++;
       pv->color.r = *color++;
@@ -235,16 +243,17 @@ static void menu_display_vk_draw(void *data)
       case VIDEO_SHADER_MENU_4:
       case VIDEO_SHADER_MENU_5:
       {
-         const struct vk_draw_triangles call = {
-            vk->display.pipelines[
-               to_menu_pipeline(draw->prim_type, draw->pipeline.id)],
-               NULL,
-               VK_NULL_HANDLE,
-               draw->pipeline.backend_data,
-               draw->pipeline.backend_data_size,
-               &range,
-               draw->coords->vertices,
-         };
+         struct vk_draw_triangles call;
+
+         call.pipeline     = vk->display.pipelines[
+               to_menu_pipeline(draw->prim_type, draw->pipeline.id)];
+         call.texture      = NULL;
+         call.sampler      = VK_NULL_HANDLE;
+         call.uniform      = draw->pipeline.backend_data;
+         call.uniform_size = draw->pipeline.backend_data_size;
+         call.vbo          = &range;
+         call.vertices     = draw->coords->vertices;
+
          vulkan_draw_triangles(vk, &call);
          break;
       }
@@ -255,15 +264,16 @@ static void menu_display_vk_draw(void *data)
       default:
       {
          struct vk_draw_triangles call;
-         
+
          call.pipeline     = vk->display.pipelines[
                to_display_pipeline(draw->prim_type, vk->display.blend)];
          call.texture      = texture;
          call.sampler      = texture->mipmap ?
             vk->samplers.mipmap_linear :
-            (texture->default_smooth ? vk->samplers.linear : vk->samplers.nearest);
+            (texture->default_smooth ? vk->samplers.linear
+             : vk->samplers.nearest);
          call.uniform      = draw->matrix_data
-            ? draw->matrix_data : menu_display_vk_get_default_mvp();
+            ? draw->matrix_data : menu_display_vk_get_default_mvp(video_info);
          call.uniform_size = sizeof(math_matrix_4x4);
          call.vbo          = &range;
          call.vertices     = draw->coords->vertices;
@@ -278,22 +288,25 @@ static void menu_display_vk_restore_clear_color(void)
 {
 }
 
-static void menu_display_vk_clear_color(menu_display_ctx_clearcolor_t *clearcolor)
+static void menu_display_vk_clear_color(
+      menu_display_ctx_clearcolor_t *clearcolor,
+      video_frame_info_t *video_info)
 {
    VkClearRect rect;
    VkClearAttachment attachment;
-   vk_t *vk                      = (vk_t*)video_driver_get_ptr(false);
+   vk_t *vk = video_info ? (vk_t*)video_info->userdata : NULL;
    if (!vk || !clearcolor)
       return;
 
    memset(&attachment, 0, sizeof(attachment));
+   memset(&rect, 0, sizeof(rect));
+
    attachment.aspectMask                  = VK_IMAGE_ASPECT_COLOR_BIT;
    attachment.clearValue.color.float32[0] = clearcolor->r;
    attachment.clearValue.color.float32[1] = clearcolor->g;
    attachment.clearValue.color.float32[2] = clearcolor->b;
    attachment.clearValue.color.float32[3] = clearcolor->a;
 
-   memset(&rect, 0, sizeof(rect));
    rect.rect.extent.width  = vk->context->swapchain_width;
    rect.rect.extent.height = vk->context->swapchain_height;
    rect.layerCount         = 1;
@@ -301,16 +314,20 @@ static void menu_display_vk_clear_color(menu_display_ctx_clearcolor_t *clearcolo
    vkCmdClearAttachments(vk->cmd, 1, &attachment, 1, &rect);
 }
 
-static void menu_display_vk_blend_begin(void)
+static void menu_display_vk_blend_begin(video_frame_info_t *video_info)
 {
-   vk_t *vk = (vk_t*)video_driver_get_ptr(false);
-   vk->display.blend = true;
+   vk_t *vk = video_info ? (vk_t*)video_info->userdata : NULL;
+
+   if (vk)
+      vk->display.blend = true;
 }
 
-static void menu_display_vk_blend_end(void)
+static void menu_display_vk_blend_end(video_frame_info_t *video_info)
 {
-   vk_t *vk = (vk_t*)video_driver_get_ptr(false);
-   vk->display.blend = false;
+   vk_t *vk = video_info ? (vk_t*)video_info->userdata : NULL;
+
+   if (vk)
+      vk->display.blend = false;
 }
 
 static bool menu_display_vk_font_init_first(
@@ -323,7 +340,10 @@ static bool menu_display_vk_font_init_first(
          is_threaded,
          FONT_DRIVER_RENDER_VULKAN_API);
 
-   return *handle;
+   if (*handle)
+      return true;
+
+   return false;
 }
 
 menu_display_ctx_driver_t menu_display_ctx_vulkan = {
@@ -340,4 +360,5 @@ menu_display_ctx_driver_t menu_display_ctx_vulkan = {
    menu_display_vk_font_init_first,
    MENU_VIDEO_DRIVER_VULKAN,
    "menu_display_vulkan",
+   false
 };

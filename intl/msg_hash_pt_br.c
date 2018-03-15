@@ -26,9 +26,8 @@
 #include "../verbosity.h"
 
 int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) {
-    uint32_t driver_hash = 0;
     settings_t *settings = config_get_ptr();
-	
+
 	if (msg == MENU_ENUM_LABEL_CONNECT_NETPLAY_ROOM)
     {
        snprintf(s, len,
@@ -36,7 +35,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
              );
        return 0;
     }
-	
+
     if (msg <= MENU_ENUM_LABEL_INPUT_HOTKEY_BIND_END &&
         msg >= MENU_ENUM_LABEL_INPUT_HOTKEY_BIND_BEGIN) {
         unsigned idx = msg - MENU_ENUM_LABEL_INPUT_HOTKEY_BIND_BEGIN;
@@ -54,6 +53,10 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                                  " \n"
                                  "Soltar o botão desativa o Avanço Rápido."
                 );
+                break;
+            case RARCH_SLOWMOTION_HOLD_KEY:
+                snprintf(s, len,
+                         "Manter pressionado para Câmera Lenta.");
                 break;
             case RARCH_PAUSE_TOGGLE:
                 snprintf(s, len,
@@ -93,17 +96,9 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                 snprintf(s, len,
                          "Alternar o teclado virtual.");
                 break;
-            case RARCH_NETPLAY_FLIP:
-                snprintf(s, len,
-                         "Inverter usuários do Netplay.");
-                break;
             case RARCH_NETPLAY_GAME_WATCH:
                 snprintf(s, len,
                          "Alternar modo jogador/espectador do Netplay.");
-                break;
-            case RARCH_SLOWMOTION:
-                snprintf(s, len,
-                         "Manter pressionado para Câmera Lenta.");
                 break;
             case RARCH_ENABLE_HOTKEY:
                 snprintf(s, len,
@@ -737,49 +732,45 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
             );
             break;
         case MENU_ENUM_LABEL_INPUT_DRIVER:
-            if (settings)
-                driver_hash = msg_hash_calculate(settings->arrays.input_driver);
+            {
+               const char *lbl = settings ? settings->arrays.input_driver : NULL;
 
-            switch (driver_hash) {
-                case MENU_LABEL_INPUT_DRIVER_UDEV:
-                    snprintf(s, len,
-                             "Driver de entrada udev. \n"
-                                     " \n"
-                                     "Utiliza a recente API evdev joypad \n"
-                                     "para suporte a Joystick. Suporta \n"
-                                     "hotplugging e force feedback. \n"
-                                     " \n"
-                                     "O driver lê eventos evdev para suporte \n"
-                                     "a teclado. Tambêm suporta keyboard callback, \n"
-                                     "Mouses e Touchpads. \n"
-                                     " \n"
-                                     "Por padrão na maioria das distros, \n"
-                                     "nodes /dev/input são somente root (mode 600). \n"
-                                     "Você pode criar uma regra udev para torná-los \n"
-                                     "acessíveis para não root."
-                    );
-                    break;
-                case MENU_LABEL_INPUT_DRIVER_LINUXRAW:
-                    snprintf(s, len,
-                             "Driver de entrada linuxraw. \n"
-                                     " \n"
-                                     "Este driver requer um TTY ativo. Eventos de \n"
-                                     "teclado são lidos diretamente do TTY o que \n"
-                                     "o torna simples, mas não tão flexível, \n"
-                                     "quanto udev. \n"
-                                     "Mouses, etc, não são suportados de nenhum \n"
-                                     "modo. \n"
-                                     " \n"
-                                     "Este driver utiliza a antiga API de Joystick \n"
-                                     "(/dev/input/js*).");
-                    break;
-                default:
-                    snprintf(s, len,
-                             "Driver de entrada.\n"
-                                     " \n"
-                                     "Dependendo do driver de vídeo, pode \n"
-                                     "forçar um driver de entrada diferente.");
-                    break;
+               if (string_is_equal(lbl, msg_hash_to_str(MENU_ENUM_LABEL_INPUT_DRIVER_UDEV)))
+                  snprintf(s, len,
+                        "Driver de entrada udev. \n"
+                        " \n"
+                        "Utiliza a recente API evdev joypad \n"
+                        "para suporte a Joystick. Suporta \n"
+                        "hotplugging e force feedback. \n"
+                        " \n"
+                        "O driver lê eventos evdev para suporte \n"
+                        "a teclado. Tambêm suporta keyboard callback, \n"
+                        "Mouses e Touchpads. \n"
+                        " \n"
+                        "Por padrão na maioria das distros, \n"
+                        "nodes /dev/input são somente root (mode 600). \n"
+                        "Você pode criar uma regra udev para torná-los \n"
+                        "acessíveis para não root."
+                        );
+               else if (string_is_equal(lbl, msg_hash_to_str(MENU_ENUM_LABEL_INPUT_DRIVER_LINUXRAW)))
+                  snprintf(s, len,
+                        "Driver de entrada linuxraw. \n"
+                        " \n"
+                        "Este driver requer um TTY ativo. Eventos de \n"
+                        "teclado são lidos diretamente do TTY o que \n"
+                        "o torna simples, mas não tão flexível, \n"
+                        "quanto udev. \n"
+                        "Mouses, etc, não são suportados de nenhum \n"
+                        "modo. \n"
+                        " \n"
+                        "Este driver utiliza a antiga API de Joystick \n"
+                        "(/dev/input/js*).");
+               else
+                  snprintf(s, len,
+                        "Driver de entrada.\n"
+                        " \n"
+                        "Dependendo do driver de vídeo, pode \n"
+                        "forçar um driver de entrada diferente.");
             }
             break;
         case MENU_ENUM_LABEL_LOAD_CONTENT_LIST:
@@ -823,7 +814,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
             snprintf(s, len,
                      "Driver de vídeo atual.");
 
-            if (string_is_equal_fast(settings->arrays.video_driver, "gl", 2))
+            if (string_is_equal(settings->arrays.video_driver, "gl"))
             {
                 snprintf(s, len,
                          "Driver de vídeo OpenGL. \n"
@@ -836,7 +827,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                                  "Libretro GL ou renderizados por software \n"
                                  "é dependente do driver GL de sua placa de vídeo.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "sdl2", 4))
+            else if (string_is_equal(settings->arrays.video_driver, "sdl2"))
             {
                 snprintf(s, len,
                          "Driver de vídeo SDL 2.\n"
@@ -848,7 +839,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                                  "libretro renderizados por software é dependente \n"
                                  "da implementação SDL da sua plataforma.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "sdl1", 4))
+            else if (string_is_equal(settings->arrays.video_driver, "sdl1"))
             {
                 snprintf(s, len,
                          "Driver de vídeo SDL. \n"
@@ -859,7 +850,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                                  "O desempenho é considerado medíocre. \n"
                                  "Cosidere utilizar apenas como último recurso.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "d3d", 3))
+            else if (string_is_equal(settings->arrays.video_driver, "d3d"))
             {
                 snprintf(s, len,
                          "Driver de vídeo Direct3D. \n"
@@ -868,7 +859,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                                  "software depende do driver D3D de base da\n"
                                  "sua placa de vídeo).");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "exynos", 6))
+            else if (string_is_equal(settings->arrays.video_driver, "exynos"))
             {
                 snprintf(s, len,
                          "Driver de vídeo Exynos-G2D. \n"
@@ -880,7 +871,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                                  "O desempenho de núcleos renderizados por \n"
                                  "por hardware deve ser ótimo.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "drm", 3))
+            else if (string_is_equal(settings->arrays.video_driver, "drm"))
             {
                 snprintf(s, len,
                          "Driver de vídeo Plain DRM. \n"
@@ -889,7 +880,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                                  "usando libdrm para escala por hardware \n"
                                  "utilizando overlay de GPU.");
             }
-            else if (string_is_equal_fast(settings->arrays.video_driver, "sunxi", 5))
+            else if (string_is_equal(settings->arrays.video_driver, "sunxi"))
             {
                 snprintf(s, len,
                          "Driver de vídeo Sunxi-G2D. \n"
@@ -906,22 +897,17 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
             );
             break;
         case MENU_ENUM_LABEL_AUDIO_RESAMPLER_DRIVER:
-            if (settings)
-                driver_hash = msg_hash_calculate(settings->arrays.audio_resampler);
+            {
+               const char *lbl = settings ? settings->arrays.audio_resampler : NULL;
 
-            switch (driver_hash) {
-                case MENU_LABEL_AUDIO_RESAMPLER_DRIVER_SINC:
-                    snprintf(s, len,
-                             "Implementação SINC windowed.");
-                    break;
-                case MENU_LABEL_AUDIO_RESAMPLER_DRIVER_CC:
-                    snprintf(s, len,
-                             "Implementação Convoluted Cosine.");
-                    break;
-                default:
-                    if (string_is_empty(s))
-                        strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NO_INFORMATION_AVAILABLE), len);
-                    break;
+               if (string_is_equal(lbl, msg_hash_to_str(MENU_ENUM_LABEL_AUDIO_RESAMPLER_DRIVER_SINC)))
+                  strlcpy(s,
+                        "Implementação SINC windowed.", len);
+               else if (string_is_equal(lbl, msg_hash_to_str(MENU_ENUM_LABEL_AUDIO_RESAMPLER_DRIVER_CC)))
+                  strlcpy(s,
+                        "Implementação Convoluted Cosine.", len);
+               else if (string_is_empty(s))
+                  strlcpy(s, msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NO_INFORMATION_AVAILABLE), len);
             }
             break;
         case MENU_ENUM_LABEL_VIDEO_SHADER_PRESET:
@@ -1069,7 +1055,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
         case MENU_ENUM_LABEL_LIBRETRO_LOG_LEVEL:
             snprintf(s, len,
                      "Define o nível de registro de eventos dos \n"
-                             "núcleos libretro. (GET_LOG_INTERFACE) \n" 
+                             "núcleos libretro. (GET_LOG_INTERFACE) \n"
                              " \n"
                              " Se o nível do registro de evento emitido \n"
                              " pelo núcleo libretro for abaixo do nível \n"
@@ -1214,25 +1200,31 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                              "implementações de núcleo Libretro.");
             break;
         case MENU_ENUM_LABEL_VIDEO_REFRESH_RATE_AUTO:
-            snprintf(s, len,
-                     "Taxa de Atualização Automática. \n"
-                             " \n"
-                             "A taxa de atualização estimada da tela (Hz). \n"
-                             "É utilizado para calcular a taxa de entrada \n"
-                             "de áudio com a fórmula: \n"
-                             " \n"
-                             "taxa de ent de áudio = taxa de ent do jogo * \n"
-                             "taxa de atlz da tela / taxa de atlz do jogo \n"
-                             " \n"
-                             "Se a implementação não reportar nenhum \n"
-                             "valor, os padrões NTSC serão usados para \n"
-                             "garantir compatibilidade.\n"
-                             " \n"
-                             "Este valor deve ficar próximo de 60Hz para \n"
-                             "evitar mudanças drásticas no timbre do som. \n"
-                             "Se seu monitor não roda a 60Hz, ou próximo \n"
-                             "disso, desative o V-Sync, e deixe este valor \n"
-                             "no padrão.");
+            {
+               /* Work around C89 limitations */
+               const char *t =
+                  "Taxa de Atualização Automática. \n"
+                  " \n"
+                  "A taxa de atualização estimada da tela (Hz). \n"
+                  "É utilizado para calcular a taxa de entrada \n"
+                  "de áudio com a fórmula: \n"
+                  " \n"
+                  "taxa de ent de áudio = taxa de ent do jogo * \n"
+                  "taxa de atlz da tela / taxa de atlz do jogo \n"
+                  " \n";
+               const char *u =
+                  "Se a implementação não reportar nenhum \n"
+                  "valor, os padrões NTSC serão usados para \n"
+                  "garantir compatibilidade.\n"
+                  " \n"
+                  "Este valor deve ficar próximo de 60Hz para \n"
+                  "evitar mudanças drásticas no timbre do som. \n"
+                  "Se seu monitor não roda a 60Hz, ou próximo \n"
+                  "disso, desative o V-Sync, e deixe este valor \n"
+                  "no padrão.";
+               strlcpy(s, t, len);
+               strlcat(s, u, len);
+            }
             break;
         case MENU_ENUM_LABEL_VIDEO_ROTATION:
             snprintf(s, len,
@@ -1485,7 +1477,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
         case MENU_ENUM_LABEL_VIDEO_SWAP_INTERVAL:
             snprintf(s, len,
                      "Intervalo de Troca da Sincronia Vertical \n"
-                             "(V-Sync). \n" 
+                             "(V-Sync). \n"
                              " \n"
                              "Usa um intervalo de troca personalizado \n"
                              "para V-Sync. Defina para reduzir \n"
@@ -1577,7 +1569,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
             snprintf(s, len, "Habilitar controle do menu por toque.");
             break;
         case MENU_ENUM_LABEL_MENU_WALLPAPER:
-            snprintf(s, len, 
+            snprintf(s, len,
                     "Selecionar uma imagem para definir como \n"
                              "plano de fundo.");
             break;
@@ -1658,21 +1650,27 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                              "no Netplay.");
             break;
         case MENU_ENUM_LABEL_NETPLAY_CHECK_FRAMES:
-            snprintf(s, len,
-                     "A frequência em quadros na qual o Netplay \n"
-                             "irá verificar se o hospedeiro e o cliente \n"
-                             "estão sincronizados. \n"
-                             " \n"
-                             "Com a maioria dos núcleos, este valor não \n"
-                             "terá efeito perceptível e pode ser ignorado. \n"
-                             "Com núcleos não determinísticos, este valor \n"
-                             "define quão frequente os pares do Netplay \n"
-                             "serão colocados em sincronia. Com núcleos \n"
-                             "defeituosos, definir para qualquer valor que \n"
-                             "não zero irá causar problemas de desempenho \n"
-                             "severos. Defina como zero para desativar \n"
-                             "verificações. Este valor é usado somente \n"
-                             "no hospedeiro de Netplay.");
+            {
+               /* Work around C89 limitations */
+               const char *t =
+                  "A frequência em quadros na qual o Netplay \n"
+                  "irá verificar se o hospedeiro e o cliente \n"
+                  "estão sincronizados. \n"
+                  " \n"
+                  "Com a maioria dos núcleos, este valor não \n"
+                  "terá efeito perceptível e pode ser ignorado. \n"
+                  "Com núcleos não determinísticos, este valor \n";
+               const char *u =
+                  "define quão frequente os pares do Netplay \n"
+                  "serão colocados em sincronia. Com núcleos \n"
+                  "defeituosos, definir para qualquer valor que \n"
+                  "não zero irá causar problemas de desempenho \n"
+                  "severos. Defina como zero para desativar \n"
+                  "verificações. Este valor é usado somente \n"
+                  "no hospedeiro de Netplay.";
+               strlcpy(s, t, len);
+               strlcat(s, u, len);
+            }
             break;
         case MENU_ENUM_LABEL_NETPLAY_INPUT_LATENCY_FRAMES_MIN:
             snprintf(s, len,
@@ -1816,11 +1814,6 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                              "o RetroArch. \n"
                              "Será utilizado para jogos online.");
             break;
-        case MENU_ENUM_LABEL_NETPLAY_CLIENT_SWAP_INPUT:
-            snprintf(s, len,
-                     "Ao ser o cliente de Netplay, use os \n"
-                             "vínculos de teclas do jogador 1.");
-            break;
         case MENU_ENUM_LABEL_NETPLAY_TCP_UDP_PORT:
             snprintf(s, len,
                      "A porta do endereço de IP do hospedeiro. \n"
@@ -1940,10 +1933,6 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
             snprintf(s, len,
                      "Salvar Estado de Jogo.");
             break;
-        case MENU_ENUM_LABEL_NETPLAY_FLIP_PLAYERS:
-            snprintf(s, len,
-                     "Inverter usuários do Netplay.");
-            break;
         case MENU_ENUM_LABEL_NETPLAY_GAME_WATCH:
             snprintf(s, len,
                      "Alternar modo jogador/espectador do Netplay.");
@@ -1981,7 +1970,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
                      "Manter pressionado para Avanço Rápido \n"
                              "Soltar o botão desativa o Avanço Rápido.");
             break;
-        case MENU_ENUM_LABEL_SLOWMOTION:
+        case MENU_ENUM_LABEL_SLOWMOTION_HOLD:
             snprintf(s, len,
                      "Manter pressionado para Câmera Lenta.");
             break;
@@ -2047,7 +2036,7 @@ int menu_hash_get_help_pt_br_enum(enum msg_hash_enums msg, char *s, size_t len) 
             snprintf(s, len,
                      "Você pode alterar a transparência de \n"
                              "gamepad virtual indo em \n"
-                             "'%s' -> '%s'. \n" 
+                             "'%s' -> '%s'. \n"
                              " \n"
                              "De lá você pode alterar a transparência, \n"
                              "mudar o tamanho e opacidade dos botões, etc. \n"

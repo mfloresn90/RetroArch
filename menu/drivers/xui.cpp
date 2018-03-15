@@ -26,6 +26,7 @@
 
 #include <file/file_path.h>
 #include <lists/string_list.h>
+#include <string/stdstring.h>
 #include <queues/message_queue.h>
 
 #include "menu_generic.h"
@@ -42,8 +43,10 @@
 
 #include "../../configuration.h"
 #include "../../retroarch.h"
+#include "../../verbosity.h"
 
 #include "../../gfx/drivers/d3d.h"
+#include "../../gfx/common/d3d_common.h"
 
 #define XUI_CONTROL_NAVIGATE_OK (XUI_CONTROL_NAVIGATE_RIGHT + 1)
 
@@ -164,7 +167,6 @@ HRESULT CRetroArchMain::OnInit(XUIMessageInit * pInitData, BOOL& bHandled)
       char str[PATH_MAX_LENGTH] = {0};
 
       if (
-            settings->bools.menu_core_enable &&
             menu_entries_get_core_title(str, sizeof(str)) == 0)
       {
          mbstowcs(strw_buffer, str, sizeof(strw_buffer) / sizeof(wchar_t));
@@ -234,7 +236,7 @@ HRESULT XuiTextureLoader(IXuiDevice *pDevice, LPCWSTR szFileName,
          D3DX_DEFAULT_NONPOW2,
          1,
          D3DUSAGE_CPU_CACHED_MEMORY,
-         D3DFMT_LIN_A8R8G8B8,
+         (D3DFORMAT)d3d_get_argb8888_format(),
          D3DPOOL_DEFAULT,
          D3DX_FILTER_NONE,
          D3DX_FILTER_NONE,
@@ -269,7 +271,9 @@ cleanup:
    return hr;
 }
 
-static void* xui_init(void **userdata)
+void d3d9_make_d3dpp(void *data, const video_info_t *info, void *_d3dpp);
+
+static void* xui_init(void **userdata, bool video_is_threaded)
 {
    HRESULT hr;
    d3d_video_t *d3d            = NULL;
@@ -294,9 +298,9 @@ static void* xui_init(void **userdata)
    video_info.fullscreen   = true;
    video_info.rgb32        = false;
 
-   d3d_make_d3dpp(d3d, &video_info, &d3dpp);
+   d3d9_make_d3dpp(d3d, &video_info, &d3dpp);
 
-   hr = app.InitShared(d3d->dev, &d3dpp,
+   hr = app.InitShared((D3DDevice*)d3d->dev, &d3dpp,
          (PFN_XUITEXTURELOADER)XuiTextureLoader);
 
    if (FAILED(hr))
@@ -409,17 +413,11 @@ static void xui_frame(void *data, video_frame_info_t *video_info)
    XUIMessage msg;
    XUIMessageRender msgRender;
    D3DXMATRIX matOrigView;
-   LPDIRECT3DDEVICE d3dr;
    const char *message   = NULL;
-   D3DVIEWPORT vp_full   = {0};
+   D3DVIEWPORT9 vp_full  = {0};
    d3d_video_t *d3d      = (d3d_video_t*)video_driver_get_ptr(false);
 
    if (!d3d)
-      return;
-
-   d3dr = (LPDIRECT3DDEVICE)d3d->dev;
-
-   if (!d3dr)
       return;
 
    xui_frame_count++;
@@ -438,6 +436,8 @@ static void xui_frame(void *data, video_frame_info_t *video_info)
 
    XuiRenderSetViewTransform( app.GetDC(), &matOrigView );
 
+#if 0
+   /* TODO/FIXME - update this code */
    rarch_ctl(RARCH_CTL_MSG_QUEUE_PULL, &message);
 
    if (message)
@@ -449,6 +449,7 @@ static void xui_frame(void *data, video_frame_info_t *video_info)
       if (message)
          xui_render_message(message);
    }
+#endif
 
    XuiRenderEnd( app.GetDC() );
 
@@ -561,17 +562,23 @@ static void xui_render(void *data, bool is_idle)
 
    if (XuiHandleIsValid(m_menutitle))
    {
+      menu_animation_ctx_ticker_t ticker;
       menu_entries_get_title(title, sizeof(title));
       mbstowcs(strw_buffer, title, sizeof(strw_buffer) / sizeof(wchar_t));
       XuiTextElementSetText(m_menutitle, strw_buffer);
-      menu_animation_ticker_str(title, RXUI_TERM_WIDTH(fb_width) - 3,
-            (unsigned int)frame_count / 15, title, true);
+
+	  ticker.s        = title;
+	  ticker.len      = RXUI_TERM_WIDTH(fb_width) - 3;
+	  ticker.idx      = (unsigned int)frame_count / 15;
+	  ticker.str      = title;
+	  ticker.selected = true;
+
+      menu_animation_ticker(&ticker);
    }
 
    if (XuiHandleIsValid(m_menutitle))
    {
       if (
-            settings->bools.menu_core_enable &&
             menu_entries_get_core_title(title, sizeof(title)) == 0)
       {
          mbstowcs(strw_buffer, title, sizeof(strw_buffer) / sizeof(wchar_t));
@@ -579,20 +586,28 @@ static void xui_render(void *data, bool is_idle)
       }
    }
 
-   end = menu_entries_get_end();
+   end = menu_entries_get_size();
    for (i = 0; i < end; i++)
    {
-      char entry_path[PATH_MAX_LENGTH]     = {0};
+      menu_entry_t entry;
+      char *entry_path                     = NULL;
       char entry_value[PATH_MAX_LENGTH]    = {0};
       wchar_t msg_right[PATH_MAX_LENGTH]   = {0};
       wchar_t msg_left[PATH_MAX_LENGTH]    = {0};
 
-      menu_entry_get_value(i, NULL, entry_value, sizeof(entry_value));
-      menu_entry_get_path(i, entry_path, sizeof(entry_path));
+      menu_entry_init(&entry);
+      menu_entry_get(&entry, 0, i, NULL, true);
+
+      menu_entry_get_value(&entry, entry_value, sizeof(entry_value));
+      entry_path = menu_entry_get_path(&entry);
 
       mbstowcs(msg_left,  entry_path,  sizeof(msg_left)  / sizeof(wchar_t));
       mbstowcs(msg_right, entry_value, sizeof(msg_right) / sizeof(wchar_t));
       xui_set_list_text(i, msg_left, msg_right);
+
+      menu_entry_free(&entry);
+      if (!string_is_empty(entry_path))
+         free(entry_path);
    }
 
    selection = menu_navigation_get_selection();
@@ -639,7 +654,9 @@ static void xui_list_insert(void *data,
       file_list_t *list,
       const char *path,
       const char *fullpath,
-      const char *, size_t list_size)
+      const char *unused,
+	  size_t list_size,
+	  unsigned entry_type)
 {
    wchar_t buf[PATH_MAX_LENGTH] = {0};
 
@@ -656,9 +673,9 @@ static void xui_list_free(
 
    (void)idx;
 
-   if( list_size > x)
+   if (list_size > (unsigned)x)
       list_size = x;
-   if( list_size > 0)
+   if (list_size > 0)
       XuiListDeleteItems(m_menulist, 0, list_size);
 }
 

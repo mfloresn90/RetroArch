@@ -22,6 +22,7 @@
 #include <retro_miscellaneous.h>
 #include <formats/image.h>
 #include <file/file_path.h>
+#include <streams/file_stream.h>
 #include <string/stdstring.h>
 
 #ifdef HAVE_CONFIG_H
@@ -38,8 +39,8 @@
 #include "menu_driver.h"
 #include "menu_cbs.h"
 #include "menu_event.h"
+#include "menu_entries.h"
 #include "widgets/menu_dialog.h"
-#include "widgets/menu_list.h"
 #include "menu_shader.h"
 
 #include "../config.def.h"
@@ -86,8 +87,17 @@ static const menu_ctx_driver_t *menu_ctx_drivers[] = {
 
 /* Menu display drivers */
 static menu_display_ctx_driver_t *menu_display_ctx_drivers[] = {
-#ifdef HAVE_D3D
-   &menu_display_ctx_d3d,
+#ifdef HAVE_D3D8
+   &menu_display_ctx_d3d8,
+#endif
+#ifdef HAVE_D3D9
+   &menu_display_ctx_d3d9,
+#endif
+#ifdef HAVE_D3D11
+   &menu_display_ctx_d3d11,
+#endif
+#ifdef HAVE_D3D12
+   &menu_display_ctx_d3d12,
 #endif
 #ifdef HAVE_OPENGL
    &menu_display_ctx_gl,
@@ -121,7 +131,7 @@ uintptr_t menu_display_white_texture;
 
 static video_coord_array_t menu_disp_ca;
 
-static enum 
+static enum
 menu_toggle_reason menu_display_toggle_reason    = MENU_TOGGLE_REASON_NONE;
 
 /* Width, height and pitch of the menu framebuffer */
@@ -175,7 +185,7 @@ static void *menu_userdata                      = NULL;
 
 /* Quick jumping indices with L/R.
  * Rebuilt when parsing directory. */
-static size_t scroll_index_list[SCROLL_INDEX_SIZE];
+static size_t   scroll_index_list[SCROLL_INDEX_SIZE];
 static unsigned scroll_index_size               = 0;
 static unsigned scroll_acceleration             = 0;
 static size_t menu_driver_selection_ptr         = 0;
@@ -190,7 +200,7 @@ void menu_display_toggle_set_reason(enum menu_toggle_reason reason)
   menu_display_toggle_reason = reason;
 }
 
-/* Check if the current menu driver is compatible 
+/* Check if the current menu driver is compatible
  * with your video driver. */
 static bool menu_display_check_compatibility(
       enum menu_display_driver_type type,
@@ -208,39 +218,51 @@ static bool menu_display_check_compatibility(
       case MENU_VIDEO_DRIVER_GENERIC:
          return true;
       case MENU_VIDEO_DRIVER_OPENGL:
-         if (string_is_equal_fast(video_driver, "gl", 2))
+         if (string_is_equal(video_driver, "gl"))
             return true;
          break;
       case MENU_VIDEO_DRIVER_VULKAN:
-         if (string_is_equal_fast(video_driver, "vulkan", 6))
+         if (string_is_equal(video_driver, "vulkan"))
             return true;
          break;
-      case MENU_VIDEO_DRIVER_DIRECT3D:
-         if (string_is_equal_fast(video_driver, "d3d", 3))
+      case MENU_VIDEO_DRIVER_DIRECT3D8:
+         if (string_is_equal(video_driver, "d3d8"))
+            return true;
+         break;
+      case MENU_VIDEO_DRIVER_DIRECT3D9:
+         if (string_is_equal(video_driver, "d3d9"))
+            return true;
+         break;
+      case MENU_VIDEO_DRIVER_DIRECT3D11:
+         if (string_is_equal(video_driver, "d3d11"))
+            return true;
+         break;
+      case MENU_VIDEO_DRIVER_DIRECT3D12:
+         if (string_is_equal(video_driver, "d3d12"))
             return true;
          break;
       case MENU_VIDEO_DRIVER_VITA2D:
-         if (string_is_equal_fast(video_driver, "vita2d", 6))
+         if (string_is_equal(video_driver, "vita2d"))
             return true;
          break;
       case MENU_VIDEO_DRIVER_CTR:
-         if (string_is_equal_fast(video_driver, "ctr", 3))
+         if (string_is_equal(video_driver, "ctr"))
             return true;
          break;
       case MENU_VIDEO_DRIVER_WIIU:
-         if (string_is_equal_fast(video_driver, "gx2", 3))
+         if (string_is_equal(video_driver, "gx2"))
             return true;
          break;
       case MENU_VIDEO_DRIVER_CACA:
-         if (string_is_equal_fast(video_driver, "caca", 4))
+         if (string_is_equal(video_driver, "caca"))
             return true;
          break;
       case MENU_VIDEO_DRIVER_GDI:
-         if (string_is_equal_fast(video_driver, "gdi", 3))
+         if (string_is_equal(video_driver, "gdi"))
             return true;
          break;
       case MENU_VIDEO_DRIVER_VGA:
-         if (string_is_equal_fast(video_driver, "vga", 3))
+         if (string_is_equal(video_driver, "vga"))
             return true;
          break;
    }
@@ -286,17 +308,17 @@ void menu_display_timedate(menu_display_ctx_datetime_t *datetime)
 }
 
 /* Begin blending operation */
-void menu_display_blend_begin(void)
+void menu_display_blend_begin(video_frame_info_t *video_info)
 {
    if (menu_disp && menu_disp->blend_begin)
-      menu_disp->blend_begin();
+      menu_disp->blend_begin(video_info);
 }
 
 /* End blending operation */
-void menu_display_blend_end(void)
+void menu_display_blend_end(video_frame_info_t *video_info)
 {
    if (menu_disp && menu_disp->blend_end)
-      menu_disp->blend_end();
+      menu_disp->blend_end(video_info);
 }
 
 /* Teardown; deinitializes and frees all
@@ -325,7 +347,9 @@ static font_data_t *menu_display_font_main_init(
    return font_data;
 }
 
-font_data_t *menu_display_font(enum application_special_type type, float font_size,
+font_data_t *menu_display_font(
+      enum application_special_type type,
+      float font_size,
       bool is_threaded)
 {
    menu_display_ctx_font_t font_info;
@@ -333,7 +357,8 @@ font_data_t *menu_display_font(enum application_special_type type, float font_si
 
    fontpath[0] = '\0';
 
-   fill_pathname_application_special(fontpath, sizeof(fontpath), type);
+   fill_pathname_application_special(
+         fontpath, sizeof(fontpath), type);
 
    font_info.path = fontpath;
    font_info.size = font_size;
@@ -341,7 +366,7 @@ font_data_t *menu_display_font(enum application_special_type type, float font_si
    return menu_display_font_main_init(&font_info, is_threaded);
 }
 
-/* Reset the menu's coordinate array vertices. 
+/* Reset the menu's coordinate array vertices.
  * NOTE: Not every menu driver uses this. */
 void menu_display_coords_array_reset(void)
 {
@@ -364,7 +389,7 @@ void menu_display_set_font_framebuffer(const uint8_t *buffer)
 }
 
 static bool menu_display_libretro_running(
-      bool rarch_is_inited, 
+      bool rarch_is_inited,
       bool rarch_is_dummy_core)
 {
    settings_t *settings = config_get_ptr();
@@ -377,11 +402,13 @@ static bool menu_display_libretro_running(
 }
 
 /* Display the libretro core's framebuffer onscreen. */
-bool menu_display_libretro(bool is_idle, bool rarch_is_inited, bool rarch_is_dummy_core)
+bool menu_display_libretro(bool is_idle,
+      bool rarch_is_inited, bool rarch_is_dummy_core)
 {
    video_driver_set_texture_enable(true, false);
 
-   if (menu_display_libretro_running(rarch_is_inited, rarch_is_dummy_core))
+   if (menu_display_libretro_running(
+            rarch_is_inited, rarch_is_dummy_core))
    {
       if (!input_driver_is_libretro_input_blocked())
          input_driver_set_libretro_input_blocked();
@@ -393,7 +420,8 @@ bool menu_display_libretro(bool is_idle, bool rarch_is_inited, bool rarch_is_dum
    }
 
    if (is_idle)
-      return true; /* Maybe return false here for indication of idleness? */
+      return true; /* Maybe return false here
+                      for indication of idleness? */
    return video_driver_cached_frame();
 }
 
@@ -458,8 +486,8 @@ void menu_display_set_font_data_init(bool state)
    menu_display_font_alloc_framebuf = state;
 }
 
-/* Returns true if an animation is still active or 
- * when the menu framebuffer still is dirty and 
+/* Returns true if an animation is still active or
+ * when the menu framebuffer still is dirty and
  * therefore it still needs to be rendered onscreen.
  *
  * This function can be used for optimization purposes
@@ -553,13 +581,15 @@ bool menu_display_restore_clear_color(void)
    return true;
 }
 
-void menu_display_clear_color(menu_display_ctx_clearcolor_t *color)
+void menu_display_clear_color(menu_display_ctx_clearcolor_t *color,
+      video_frame_info_t *video_info)
 {
    if (menu_disp && menu_disp->clear_color)
-      menu_disp->clear_color(color);
+      menu_disp->clear_color(color, video_info);
 }
 
-void menu_display_draw(menu_display_ctx_draw_t *draw)
+void menu_display_draw(menu_display_ctx_draw_t *draw,
+      video_frame_info_t *video_info)
 {
    if (!menu_disp || !draw || !menu_disp->draw)
       return;
@@ -568,13 +598,14 @@ void menu_display_draw(menu_display_ctx_draw_t *draw)
    if (draw->height <= 0)
       draw->height = 1;
 
-   menu_disp->draw(draw);
+   menu_disp->draw(draw, video_info);
 }
 
-void menu_display_draw_pipeline(menu_display_ctx_draw_t *draw)
+void menu_display_draw_pipeline(menu_display_ctx_draw_t *draw,
+      video_frame_info_t *video_info)
 {
    if (menu_disp && draw && menu_disp->draw_pipeline)
-      menu_disp->draw_pipeline(draw);
+      menu_disp->draw_pipeline(draw, video_info);
 }
 
 void menu_display_draw_bg(menu_display_ctx_draw_t *draw,
@@ -599,9 +630,11 @@ void menu_display_draw_bg(menu_display_ctx_draw_t *draw,
    coords.vertex        = new_vertex;
    coords.tex_coord     = new_tex_coord;
    coords.lut_tex_coord = new_tex_coord;
-   coords.color         = (const float*)draw->color;
+   coords.color         = (const float*)draw->color;   
 
-   draw->coords      = &coords;
+   draw->coords         = &coords;
+   draw->scale_factor   = 1.0f;
+   draw->rotation       = 0.0f;
 
    if (draw->texture)
       add_opacity_to_wallpaper = true;
@@ -612,7 +645,7 @@ void menu_display_draw_bg(menu_display_ctx_draw_t *draw,
    if (!draw->texture)
       draw->texture     = menu_display_white_texture;
 
-   draw->matrix_data = (math_matrix_4x4*)menu_disp->get_default_mvp();
+   draw->matrix_data = (math_matrix_4x4*)menu_disp->get_default_mvp(video_info);
 }
 
 void menu_display_draw_gradient(menu_display_ctx_draw_t *draw,
@@ -624,10 +657,11 @@ void menu_display_draw_gradient(menu_display_ctx_draw_t *draw,
 
    menu_display_draw_bg(draw, video_info, false,
          video_info->menu_wallpaper_opacity);
-   menu_display_draw(draw);
+   menu_display_draw(draw, video_info);
 }
 
 void menu_display_draw_quad(
+      video_frame_info_t *video_info,
       int x, int y, unsigned w, unsigned h,
       unsigned width, unsigned height,
       float *color)
@@ -642,25 +676,28 @@ void menu_display_draw_quad(
    coords.color         = color;
 
    if (menu_disp && menu_disp->blend_begin)
-      menu_disp->blend_begin();
+      menu_disp->blend_begin(video_info);
 
-   draw.x           = x;
-   draw.y           = (int)height - y - (int)h;
-   draw.width       = w;
-   draw.height      = h;
-   draw.coords      = &coords;
-   draw.matrix_data = NULL;
-   draw.texture     = menu_display_white_texture;
-   draw.prim_type   = MENU_DISPLAY_PRIM_TRIANGLESTRIP;
-   draw.pipeline.id = 0;
+   draw.x            = x;
+   draw.y            = (int)height - y - (int)h;
+   draw.width        = w;
+   draw.height       = h;
+   draw.coords       = &coords;
+   draw.matrix_data  = NULL;
+   draw.texture      = menu_display_white_texture;
+   draw.prim_type    = MENU_DISPLAY_PRIM_TRIANGLESTRIP;
+   draw.pipeline.id  = 0;
+   draw.scale_factor = 1.0f;
+   draw.rotation     = 0.0f;
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    if (menu_disp && menu_disp->blend_end)
-      menu_disp->blend_end();
+      menu_disp->blend_end(video_info);
 }
 
 void menu_display_draw_texture(
+      video_frame_info_t *video_info,
       int x, int y, unsigned w, unsigned h,
       unsigned width, unsigned height,
       float *color, uintptr_t texture)
@@ -687,18 +724,19 @@ void menu_display_draw_texture(
    draw.pipeline.id         = 0;
    coords.color             = (const float*)color;
 
-   menu_display_rotate_z(&rotate_draw);
+   menu_display_rotate_z(&rotate_draw, video_info);
 
    draw.texture             = texture;
    draw.x                   = x;
    draw.y                   = height - y;
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 }
 
 /* Draw the texture split into 9 sections, without scaling the corners.
  * The middle sections will only scale in the X axis, and the side
  * sections will only scale in the Y axis. */
 void menu_display_draw_texture_slice(
+      video_frame_info_t *video_info,
       int x, int y, unsigned w, unsigned h,
       unsigned new_w, unsigned new_h,
       unsigned width, unsigned height,
@@ -773,7 +811,7 @@ void menu_display_draw_texture_slice(
    draw.pipeline.id         = 0;
    coords.color             = (const float*)colors;
 
-   menu_display_rotate_z(&rotate_draw);
+   menu_display_rotate_z(&rotate_draw, video_info);
 
    draw.texture             = texture;
    draw.x                   = 0;
@@ -804,7 +842,7 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0];
    tex_coord[7] = T_TR[1];
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    /* top-middle section */
    vert_coord[0] = V_BL[0] + vert_woff;
@@ -825,7 +863,7 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0] + tex_mid_width;
    tex_coord[7] = T_TR[1];
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    /* top-right corner */
    vert_coord[0] = V_BL[0] + vert_woff + vert_scaled_mid_width;
@@ -846,7 +884,7 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0] + tex_mid_width + tex_woff;
    tex_coord[7] = T_TR[1];
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    /* middle-left section */
    vert_coord[0] = V_BL[0];
@@ -867,7 +905,7 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0];
    tex_coord[7] = T_TR[1] + tex_hoff;
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    /* center section */
    vert_coord[0] = V_BL[0] + vert_woff;
@@ -888,7 +926,7 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0] + tex_mid_width;
    tex_coord[7] = T_TR[1] + tex_hoff;
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    /* middle-right section */
    vert_coord[0] = V_BL[0] + vert_woff + vert_scaled_mid_width;
@@ -909,7 +947,7 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0] + tex_woff + tex_mid_width;
    tex_coord[7] = T_TR[1] + tex_hoff;
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    /* bottom-left corner */
    vert_coord[0] = V_BL[0];
@@ -930,7 +968,7 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0];
    tex_coord[7] = T_TR[1] + tex_hoff + tex_mid_height;
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    /* bottom-middle section */
    vert_coord[0] = V_BL[0] + vert_woff;
@@ -951,7 +989,7 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0] + tex_mid_width;
    tex_coord[7] = T_TR[1] + tex_mid_height;
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    /* bottom-right corner */
    vert_coord[0] = V_BL[0] + vert_woff + vert_scaled_mid_width;
@@ -972,23 +1010,28 @@ void menu_display_draw_texture_slice(
    tex_coord[6] = T_TR[0] + tex_woff + tex_mid_width;
    tex_coord[7] = T_TR[1] + tex_hoff + tex_mid_height;
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    free(colors);
    free(vert_coord);
    free(tex_coord);
 }
 
-void menu_display_rotate_z(menu_display_ctx_rotate_draw_t *draw)
+void menu_display_rotate_z(menu_display_ctx_rotate_draw_t *draw,
+      video_frame_info_t *video_info)
 {
-#if !defined(VITA) && !defined(_3DS) && !defined(WIIU)
    math_matrix_4x4 matrix_rotated, matrix_scaled;
    math_matrix_4x4 *b = NULL;
 
-   if (!draw || !menu_disp || !menu_disp->get_default_mvp)
+   if (
+         !draw                       || 
+         !menu_disp                  || 
+         !menu_disp->get_default_mvp || 
+         menu_disp->handles_transform
+      )
       return;
 
-   b = (math_matrix_4x4*)menu_disp->get_default_mvp();
+   b = (math_matrix_4x4*)menu_disp->get_default_mvp(video_info);
 
    if (!b)
       return;
@@ -1002,7 +1045,6 @@ void menu_display_rotate_z(menu_display_ctx_rotate_draw_t *draw)
    matrix_4x4_scale(matrix_scaled,
          draw->scale_x, draw->scale_y, draw->scale_z);
    matrix_4x4_multiply(*draw->matrix, matrix_scaled, *draw->matrix);
-#endif
 }
 
 bool menu_display_get_tex_coords(menu_display_ctx_coord_draw_t *draw)
@@ -1049,8 +1091,8 @@ void menu_display_handle_savestate_thumbnail_upload(void *task_data,
    free(user_data);
 }
 
-/* Function that gets called when we want to load in a 
- * new menu wallpaper. 
+/* Function that gets called when we want to load in a
+ * new menu wallpaper.
  */
 void menu_display_handle_wallpaper_upload(void *task_data,
       void *user_data, const char *err)
@@ -1083,10 +1125,11 @@ void menu_display_allocate_white_texture(void)
          TEXTURE_FILTER_NEAREST, &menu_display_white_texture);
 }
 
-/* 
+/*
  * Draw a hardware cursor on top of the screen for the mouse.
  */
 void menu_display_draw_cursor(
+      video_frame_info_t *video_info,
       float *color, float cursor_size, uintptr_t texture,
       float x, float y, unsigned width, unsigned height)
 {
@@ -1106,7 +1149,7 @@ void menu_display_draw_cursor(
    coords.color         = (const float*)color;
 
    if (menu_disp && menu_disp->blend_begin)
-      menu_disp->blend_begin();
+      menu_disp->blend_begin(video_info);
 
    draw.x               = x - (cursor_size / 2);
    draw.y               = (int)height - y - (cursor_size / 2);
@@ -1116,11 +1159,12 @@ void menu_display_draw_cursor(
    draw.matrix_data     = NULL;
    draw.texture         = texture;
    draw.prim_type       = MENU_DISPLAY_PRIM_TRIANGLESTRIP;
+   draw.pipeline.id     = 0;
 
-   menu_display_draw(&draw);
+   menu_display_draw(&draw, video_info);
 
    if (menu_disp && menu_disp->blend_end)
-      menu_disp->blend_end();
+      menu_disp->blend_end(video_info);
 }
 
 static INLINE float menu_display_scalef(float val,
@@ -1192,10 +1236,12 @@ void menu_display_snow(int width, int height)
 
       if (p->alive)
       {
-         int16_t mouse_x  = menu_input_mouse_state(MENU_MOUSE_X_AXIS);
+         int16_t mouse_x  = menu_input_mouse_state(
+               MENU_MOUSE_X_AXIS);
 
          p->y            += p->yspeed;
-         p->x            += menu_display_scalef(mouse_x, 0, width, -0.3, 0.3);
+         p->x            += menu_display_scalef(
+               mouse_x, 0, width, -0.3, 0.3);
          p->x            += p->xspeed;
 
          p->alive         = p->y >= 0 && p->y < height
@@ -1228,7 +1274,8 @@ void menu_display_snow(int width, int height)
       if (!p->alive)
          continue;
 
-      alpha = menu_display_randf(0, 100) > 90 ? p->alpha/2 : p->alpha;
+      alpha = menu_display_randf(0, 100) > 90 ?
+         p->alpha/2 : p->alpha;
 
       for (j = 0; j < 16; j++)
       {
@@ -1244,7 +1291,7 @@ void menu_display_snow(int width, int height)
    }
 }
 
-/* Draw text on top of the screen. 
+/* Draw text on top of the screen.
  */
 void menu_display_draw_text(
       const font_data_t *font, const char *text,
@@ -1255,8 +1302,9 @@ void menu_display_draw_text(
    struct font_params params;
 
    /* Don't draw outside of the screen */
-   if (x < -64 || x > width + 64
-         || y < -64 || y > height + 64)
+   if (     (x < -64 || x > width  + 64)
+         || (y < -64 || y > height + 64)
+      )
       return;
 
    params.x           = x / width;
@@ -1284,22 +1332,20 @@ void menu_display_reset_textures_list(
       uintptr_t *item, enum texture_filter_type filter_type)
 {
    struct texture_image ti;
-   char path[PATH_MAX_LENGTH];
+   char texpath[PATH_MAX_LENGTH] = {0};
 
-   path[0]                     = '\0';
-
-   ti.width                    = 0;
-   ti.height                   = 0;
-   ti.pixels                   = NULL;
-   ti.supports_rgba            = video_driver_supports_rgba();
+   ti.width                      = 0;
+   ti.height                     = 0;
+   ti.pixels                     = NULL;
+   ti.supports_rgba              = video_driver_supports_rgba();
 
    if (!string_is_empty(texture_path))
-      fill_pathname_join(path, iconpath, texture_path, sizeof(path));
+      fill_pathname_join(texpath, iconpath, texture_path, sizeof(texpath));
 
-   if (string_is_empty(path) || !path_file_exists(path))
+   if (string_is_empty(texpath) || !filestream_exists(texpath))
       return;
 
-   if (!image_texture_load(&ti, path))
+   if (!image_texture_load(&ti, texpath))
       return;
 
    video_driver_texture_load(&ti,
@@ -1478,7 +1524,7 @@ static void menu_driver_toggle(bool on)
    retro_keyboard_event_t *key_event          = NULL;
    retro_keyboard_event_t *frontend_key_event = NULL;
    settings_t                 *settings       = config_get_ptr();
-   bool pause_libretro                        = settings ? 
+   bool pause_libretro                        = settings ?
       settings->bools.menu_pause_libretro : false;
 
    menu_driver_toggled = on;
@@ -1564,17 +1610,17 @@ bool menu_driver_render(bool is_idle, bool rarch_is_inited,
       menu_display_framebuf_dirty = true;
 
    if (BIT64_GET(menu_driver_data->state, MENU_STATE_RENDER_MESSAGEBOX)
-         && !string_is_empty(menu_driver_data->menu_state.msg))
+         && !string_is_empty(menu_driver_data->menu_state_msg))
    {
       if (menu_driver_ctx->render_messagebox)
          menu_driver_ctx->render_messagebox(menu_userdata,
-               menu_driver_data->menu_state.msg);
+               menu_driver_data->menu_state_msg);
 
       if (ui_companion_is_on_foreground())
       {
          const ui_companion_driver_t *ui = ui_companion_get_ptr();
          if (ui->render_messagebox)
-            ui->render_messagebox(menu_driver_data->menu_state.msg);
+            ui->render_messagebox(menu_driver_data->menu_state_msg);
       }
    }
 
@@ -1604,13 +1650,13 @@ bool menu_driver_is_alive(void)
    return menu_driver_alive;
 }
 
-/* Checks if the menu framebuffer is set. 
+/* Checks if the menu framebuffer is set.
  * This would usually only return true
  * for framebuffer-based menu drivers, like RGUI. */
 bool menu_driver_is_texture_set(void)
 {
-   if (menu_driver_ctx)
-      return menu_driver_ctx->set_texture;
+   if (menu_driver_ctx && menu_driver_ctx->set_texture)
+      return true;
    return false;
 }
 
@@ -1698,24 +1744,20 @@ static bool menu_driver_init_internal(bool video_is_threaded)
       menu_driver_ctx->init(&menu_userdata, video_is_threaded);
 
    if (!menu_driver_data || !menu_init(menu_driver_data))
-   {
-      retroarch_fail(1, "init_menu()");
-      return false;
-   }
+      goto error;
 
    strlcpy(settings->arrays.menu_driver, menu_driver_ctx->ident,
          sizeof(settings->arrays.menu_driver));
 
    if (menu_driver_ctx->lists_init)
-   {
       if (!menu_driver_ctx->lists_init(menu_driver_data))
-      {
-         retroarch_fail(1, "init_menu()");
-         return false;
-      }
-   }
+         goto error;
 
    return true;
+
+error:
+   retroarch_fail(1, "init_menu()");
+   return false;
 }
 
 static bool menu_driver_context_reset(bool video_is_threaded)
@@ -1833,13 +1875,16 @@ bool menu_driver_ctl(enum rarch_menu_ctl_state state, void *data)
                   menu_driver_find_handle(i);
             else
             {
-               unsigned d;
-               RARCH_WARN("Couldn't find any menu driver named \"%s\"\n",
-                     settings->arrays.menu_driver);
-               RARCH_LOG_OUTPUT("Available menu drivers are:\n");
-               for (d = 0; menu_driver_find_handle(d); d++)
-                  RARCH_LOG_OUTPUT("\t%s\n", menu_driver_find_ident(d));
-               RARCH_WARN("Going to default to first menu driver...\n");
+               if (verbosity_is_enabled())
+               {
+                  unsigned d;
+                  RARCH_WARN("Couldn't find any menu driver named \"%s\"\n",
+                        settings->arrays.menu_driver);
+                  RARCH_LOG_OUTPUT("Available menu drivers are:\n");
+                  for (d = 0; menu_driver_find_handle(d); d++)
+                     RARCH_LOG_OUTPUT("\t%s\n", menu_driver_find_ident(d));
+                  RARCH_WARN("Going to default to first menu driver...\n");
+               }
 
                menu_driver_ctx = (const menu_ctx_driver_t*)
                   menu_driver_find_handle(0);
@@ -2175,7 +2220,7 @@ bool menu_driver_ctl(enum rarch_menu_ctl_state state, void *data)
             if (pending_push)
                if (menu_driver_ctx->navigation_clear)
                   menu_driver_ctx->navigation_clear(
-                        menu_userdata, pending_push);
+                        menu_userdata, *pending_push);
          }
          break;
       case MENU_NAVIGATION_CTL_INCREMENT:
@@ -2206,7 +2251,7 @@ bool menu_driver_ctl(enum rarch_menu_ctl_state state, void *data)
                else if (menu_list_size > 0)
                   menu_driver_ctl(MENU_NAVIGATION_CTL_SET_LAST,  NULL);
             }
-            
+
             if (menu_driver_ctx->navigation_increment)
                menu_driver_ctx->navigation_increment(menu_userdata);
          }
@@ -2302,14 +2347,14 @@ bool menu_driver_ctl(enum rarch_menu_ctl_state state, void *data)
          break;
       case MENU_NAVIGATION_CTL_ADD_SCROLL_INDEX:
          {
-            size_t *sel      = (size_t*)data;
+            size_t *sel        = (size_t*)data;
             if (!sel)
                return false;
 
-            if ((scroll_index_size + 1) >= SCROLL_INDEX_SIZE)
-               scroll_index_list[scroll_index_size]   = *sel;
-            else
-               scroll_index_list[scroll_index_size++] = *sel;
+            scroll_index_list[scroll_index_size]   = *sel;
+
+            if (!((scroll_index_size + 1) >= SCROLL_INDEX_SIZE))
+               scroll_index_size++;
          }
          break;
       case MENU_NAVIGATION_CTL_GET_SCROLL_ACCEL:

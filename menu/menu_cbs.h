@@ -25,7 +25,20 @@
 #include "../config.h"
 #endif
 
+#include "menu_entries.h"
+
+#include "../msg_hash.h"
+
 RETRO_BEGIN_DECLS
+
+typedef struct key_desc
+{
+   /* libretro key id */
+   unsigned key;
+
+   /* description */
+   char desc[32];
+} key_desc_t;
 
 enum
 {
@@ -71,6 +84,8 @@ enum
    ACTION_OK_DL_REMAP_FILE,
    ACTION_OK_DL_RECORD_CONFIGFILE,
    ACTION_OK_DL_DISK_IMAGE_APPEND_LIST,
+   ACTION_OK_DL_SUBSYSTEM_ADD_LIST,
+   ACTION_OK_DL_SUBSYSTEM_LOAD,
    ACTION_OK_DL_PLAYLIST_COLLECTION,
    ACTION_OK_DL_CONTENT_COLLECTION_LIST,
    ACTION_OK_DL_CHEAT_FILE,
@@ -95,6 +110,7 @@ enum
    ACTION_OK_DL_ONSCREEN_OVERLAY_SETTINGS_LIST,
    ACTION_OK_DL_ONSCREEN_NOTIFICATIONS_SETTINGS_LIST,
    ACTION_OK_DL_MENU_VIEWS_SETTINGS_LIST,
+   ACTION_OK_DL_QUICK_MENU_VIEWS_SETTINGS_LIST,
    ACTION_OK_DL_MENU_SETTINGS_LIST,
    ACTION_OK_DL_USER_INTERFACE_SETTINGS_LIST,
    ACTION_OK_DL_MENU_FILE_BROWSER_SETTINGS_LIST,
@@ -127,9 +143,6 @@ int action_refresh_default(file_list_t *list, file_list_t *menu_list);
 
 int shader_action_parameter_right(unsigned type, const char *label, bool wraparound);
 
-int shader_action_parameter_preset_right(unsigned type, const char *label,
-      bool wraparound);
-
 int generic_action_ok_displaylist_push(const char *path, const char *new_path,
       const char *label, unsigned type, size_t idx, size_t entry_idx,
       unsigned action_type);
@@ -150,6 +163,9 @@ int core_setting_right(unsigned type, const char *label,
       bool wraparound);
 
 int action_right_input_desc(unsigned type, const char *label,
+      bool wraparound);
+
+int action_right_input_desc_kbd(unsigned type, const char *label,
       bool wraparound);
 
 int action_right_cheat(unsigned type, const char *label,
@@ -242,9 +258,9 @@ int bind_right_generic(unsigned type, const char *label,
  * Deferred push : When pressing an entry results in spawning a new list, it waits until the next
  * frame to push this onto the stack. This function callback will then be invoked.
  * Refresh : What happens when the screen has to be refreshed. Does an entry have internal state
- * that needs to be rebuild? 
+ * that needs to be rebuild?
  * Get value: Each entry has associated 'text', which we call the value. This function callback
- * lets us render that text. 
+ * lets us render that text.
  * Get title: Each entry can have a custom 'title'.
  * Label: Each entry has a label name. This function callback lets us render that label text.
  * Sublabel: each entry has a sublabel, which consists of one or more lines of additional information.

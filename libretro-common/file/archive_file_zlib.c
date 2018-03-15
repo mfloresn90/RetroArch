@@ -83,7 +83,7 @@ static bool zlib_stream_decompress_data_to_file_init(
    if (!handle->data)
       goto error;
 
-   zlib_inflate_backend.set_in(handle->stream, 
+   zlib_inflate_backend.set_in(handle->stream,
          (const uint8_t*)cdata, csize);
    zlib_inflate_backend.set_out(handle->stream,
          handle->data, size);
@@ -186,10 +186,6 @@ static int zip_file_decompressed(
    if (name[strlen(name) - 1] == '/' || name[strlen(name) - 1] == '\\')
       return 1;
 
-#if 0
-   RARCH_LOG("[deflate] Path: %s, CRC32: 0x%x\n", name, crc32);
-#endif
-
    if (strstr(name, userdata->decomp_state.needle))
    {
       bool goto_error = false;
@@ -207,9 +203,6 @@ static int zip_file_decompressed(
 
             if (buf)
             {
-               /*RARCH_LOG("%s: %s\n",
-                     msg_hash_to_str(MSG_EXTRACTING_FILE),
-                     userdata->decomp_state.opt_file);*/
                memcpy(buf, handle.data, size);
 
                if (!filestream_write_file(userdata->decomp_state.opt_file, buf, size))

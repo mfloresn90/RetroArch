@@ -16,6 +16,7 @@
 #include <compat/strl.h>
 #include <file/file_path.h>
 #include <lists/string_list.h>
+#include <string/stdstring.h>
 
 #ifdef HAVE_CONFIG_H
 #include "../../config.h"
@@ -40,6 +41,8 @@
 #include "../../input/input_driver.h"
 #include "../../input/input_remapping.h"
 
+#include "../../config.def.h"
+
 #ifndef BIND_ACTION_START
 #define BIND_ACTION_START(cbs, name) \
    cbs->action_start = name; \
@@ -48,13 +51,7 @@
 
 static int action_start_remap_file_load(unsigned type, const char *label)
 {
-   global_t *global = global_get_ptr();
-
-   if (!global)
-      return -1;
-
-   global->name.remapfile[0] = '\0';
-   input_remapping_set_defaults();
+   input_remapping_set_defaults(true);
    return 0;
 }
 
@@ -120,11 +117,12 @@ static int action_start_input_desc(unsigned type, const char *label)
    return 0;
 }
 
-static int action_start_shader_action_parameter(unsigned type, const char *label)
+static int action_start_shader_action_parameter(
+      unsigned type, const char *label)
 {
-#ifdef HAVE_SHADER_MANAGER
    video_shader_ctx_t shader_info;
    struct video_shader_parameter *param = NULL;
+   unsigned parameter = type - MENU_SETTINGS_SHADER_PARAMETER_0;
 
    video_shader_driver_get_current_shader(&shader_info);
 
@@ -132,18 +130,10 @@ static int action_start_shader_action_parameter(unsigned type, const char *label
       return 0;
 
    param          = &shader_info.data->parameters
-      [type - MENU_SETTINGS_SHADER_PARAMETER_0];
+      [parameter];
    param->current = param->initial;
    param->current = MIN(MAX(param->minimum, param->current), param->maximum);
 
-#endif
-
-   return 0;
-}
-
-static int action_start_shader_action_preset_parameter(unsigned type, const char *label)
-{
-   unsigned parameter = type - MENU_SETTINGS_SHADER_PRESET_PARAMETER_0;
    return menu_shader_manager_clear_parameter(parameter);
 }
 
@@ -172,6 +162,20 @@ static int action_start_shader_filter_pass(unsigned type, const char *label)
    return menu_shader_manager_clear_pass_filter(pass);
 }
 
+static int action_start_netplay_mitm_server(unsigned type, const char *label)
+{
+   settings_t *settings = config_get_ptr();
+   strlcpy(settings->arrays.netplay_mitm_server, netplay_mitm_server, sizeof(settings->arrays.netplay_mitm_server));
+   return 0;
+}
+
+static int action_start_shader_watch_for_changes(unsigned type, const char *label)
+{
+   settings_t *settings = config_get_ptr();
+   settings->bools.video_shader_watch_files = video_shader_watch_files;
+   return 0;
+}
+
 static int action_start_shader_num_passes(unsigned type, const char *label)
 {
    return menu_shader_manager_clear_num_passes();
@@ -194,7 +198,7 @@ static int action_start_core_setting(unsigned type,
 {
    unsigned idx                = type - MENU_SETTINGS_CORE_OPTION_START;
    core_option_manager_t *coreopts = NULL;
-   
+
    if (rarch_ctl(RARCH_CTL_CORE_OPTIONS_LIST_GET, &coreopts))
       core_option_manager_set_default(coreopts, idx);
 
@@ -285,6 +289,9 @@ static int menu_cbs_init_bind_start_compare_label(menu_file_list_cbs_t *cbs)
          case MENU_ENUM_LABEL_VIDEO_SHADER_FILTER_PASS:
             BIND_ACTION_START(cbs, action_start_shader_filter_pass);
             break;
+         case MENU_ENUM_LABEL_SHADER_WATCH_FOR_CHANGES:
+            BIND_ACTION_START(cbs, action_start_shader_watch_for_changes);
+            break;
          case MENU_ENUM_LABEL_VIDEO_SHADER_NUM_PASSES:
             BIND_ACTION_START(cbs, action_start_shader_num_passes);
             break;
@@ -293,6 +300,10 @@ static int menu_cbs_init_bind_start_compare_label(menu_file_list_cbs_t *cbs)
             break;
          case MENU_ENUM_LABEL_SCREEN_RESOLUTION:
             BIND_ACTION_START(cbs, action_start_video_resolution);
+            break;
+         case MENU_ENUM_LABEL_NETPLAY_MITM_SERVER:
+            BIND_ACTION_START(cbs, action_start_netplay_mitm_server);
+            break;
          default:
             return -1;
       }
@@ -312,7 +323,7 @@ static int menu_cbs_init_bind_start_compare_type(menu_file_list_cbs_t *cbs,
    else if (type >= MENU_SETTINGS_SHADER_PRESET_PARAMETER_0
          && type <= MENU_SETTINGS_SHADER_PRESET_PARAMETER_LAST)
    {
-      BIND_ACTION_START(cbs, action_start_shader_action_preset_parameter);
+      BIND_ACTION_START(cbs, action_start_shader_action_parameter);
    }
    else if (type >= MENU_SETTINGS_LIBRETRO_PERF_COUNTERS_BEGIN &&
          type <= MENU_SETTINGS_LIBRETRO_PERF_COUNTERS_END)
@@ -354,7 +365,7 @@ int menu_cbs_init_bind_start(menu_file_list_cbs_t *cbs,
       return -1;
 
    BIND_ACTION_START(cbs, action_start_lookup_setting);
-   
+
    if (menu_cbs_init_bind_start_compare_label(cbs) == 0)
       return 0;
 

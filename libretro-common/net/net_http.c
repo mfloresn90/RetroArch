@@ -32,6 +32,7 @@
 #endif
 #include <compat/strl.h>
 #include <string/stdstring.h>
+#include <retro_common_api.h>
 
 enum
 {
@@ -60,11 +61,11 @@ struct http_socket_state_t
 struct http_t
 {
    int status;
-   
+
    char part;
    char bodytype;
    bool error;
-   
+
    size_t pos;
    size_t len;
    size_t buflen;
@@ -96,7 +97,7 @@ void urlencode_lut_init()
 
    for (i = 0; i < 256; i++)
    {
-      urlencode_lut[i] = isalnum(i) || i == '*' || i == '-' || i == '.' || i == '_' ? i : (i == ' ') ? '+' : 0;
+      urlencode_lut[i] = isalnum(i) || i == '*' || i == '-' || i == '.' || i == '_' || i == '/' ? i : 0;
    }
 }
 
@@ -117,8 +118,8 @@ void net_http_urlencode_full(char **dest, const char *source)
    for (; *source; source++)
    {
       /* any non-ascii character will just be encoded without question */
-      if ((int)*source < sizeof(urlencode_lut) && urlencode_lut[(int)*source])
-         snprintf(enc, len, "%c", urlencode_lut[(int)*source]);
+      if ((unsigned)*source < sizeof(urlencode_lut) && urlencode_lut[(unsigned)*source])
+         snprintf(enc, len, "%c", urlencode_lut[(unsigned)*source]);
       else
          snprintf(enc, len, "%%%02X", *source & 0xFF);
 
@@ -381,7 +382,7 @@ struct http_t *net_http_new(struct http_connection_t *conn)
       net_http_send_str(&conn->sock_state, &error, "\r\n");
    }
 
-   if (conn->methodcopy && (string_is_equal_fast(conn->methodcopy, "POST", 4)))
+   if (conn->methodcopy && (string_is_equal(conn->methodcopy, "POST")))
    {
       size_t post_len, len;
       char *len_str        = NULL;
@@ -397,9 +398,9 @@ struct http_t *net_http_new(struct http_connection_t *conn)
 
       post_len = strlen(conn->postdatacopy);
 #ifdef _WIN32
-      len = snprintf(NULL, 0, "%I64u", post_len);
+      len = snprintf(NULL, 0, "%" PRIuPTR, post_len);
       len_str = (char*)malloc(len + 1);
-      snprintf(len_str, len + 1, "%I64u", post_len);
+      snprintf(len_str, len + 1, "%" PRIuPTR, post_len);
 #else
       len = snprintf(NULL, 0, "%llu", (long long unsigned)post_len);
       len_str = (char*)malloc(len + 1);
@@ -418,7 +419,7 @@ struct http_t *net_http_new(struct http_connection_t *conn)
    net_http_send_str(&conn->sock_state, &error, "Connection: close\r\n");
    net_http_send_str(&conn->sock_state, &error, "\r\n");
 
-   if (conn->methodcopy && (string_is_equal_fast(conn->methodcopy, "POST", 4)))
+   if (conn->methodcopy && (string_is_equal(conn->methodcopy, "POST")))
       net_http_send_str(&conn->sock_state, &error, conn->postdatacopy);
 
    if (error)
@@ -533,7 +534,7 @@ bool net_http_update(struct http_t *state, size_t* progress, size_t* total)
                      strlen("Content-Length: ")))
             {
                state->bodytype = T_LEN;
-               state->len = strtol(state->data + 
+               state->len = strtol(state->data +
                      strlen("Content-Length: "), NULL, 10);
             }
             if (string_is_equal(state->data, "Transfer-Encoding: chunked"))

@@ -42,9 +42,11 @@ struct apple_key_name_map_entry
    const char* const keyname;
    const uint32_t hid_id;
 };
-    
+
 extern const struct apple_key_name_map_entry apple_key_name_map[];
 #endif
+
+#define RARCH_KEY_MAP_RWEBINPUT_SIZE 111
 
 extern const struct input_key_map input_config_key_map[];
 
@@ -52,7 +54,10 @@ extern const struct rarch_key_map rarch_key_map_x11[];
 extern const struct rarch_key_map rarch_key_map_sdl[];
 extern const struct rarch_key_map rarch_key_map_sdl2[];
 extern const struct rarch_key_map rarch_key_map_dinput[];
-extern const struct rarch_key_map rarch_key_map_rwebinput[];
+
+ /* is generated at runtime so can't be const */
+extern struct rarch_key_map rarch_key_map_rwebinput[RARCH_KEY_MAP_RWEBINPUT_SIZE];
+
 extern const struct rarch_key_map rarch_key_map_linux[];
 extern const struct rarch_key_map rarch_key_map_apple_hid[];
 extern const struct rarch_key_map rarch_key_map_android[];
@@ -86,7 +91,7 @@ enum retro_key input_keymaps_translate_keysym_to_rk(unsigned sym);
  * @buf                   : Buffer.
  * @size                  : Size of @buf.
  *
- * Translates a retro key identifier to a human-readable 
+ * Translates a retro key identifier to a human-readable
  * identifier string.
  **/
 void input_keymaps_translate_rk_to_str(enum retro_key key, char *buf, size_t size);
@@ -96,4 +101,3 @@ extern enum retro_key rarch_keysym_lut[RETROK_LAST];
 RETRO_END_DECLS
 
 #endif
-
