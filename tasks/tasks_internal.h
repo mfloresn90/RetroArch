@@ -92,6 +92,12 @@ typedef struct nbio_handle
    transfer_cb_t  cb;
 } nbio_handle_t;
 
+typedef struct
+{
+   enum msg_hash_enums enum_idx;
+   char path[PATH_MAX_LENGTH];
+} file_transfer_t;
+
 #ifdef HAVE_NETWORKING
 typedef struct
 {

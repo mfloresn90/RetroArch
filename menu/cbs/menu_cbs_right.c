@@ -64,20 +64,25 @@ static int generic_shader_action_parameter_right(struct video_shader_parameter *
 int shader_action_parameter_right(unsigned type, const char *label, bool wraparound)
 {
    video_shader_ctx_t shader_info;
-   struct video_shader_parameter *param = NULL;
+   struct video_shader *shader          = menu_shader_get();
+   struct video_shader_parameter *param_menu = NULL;
+   struct video_shader_parameter *param_prev = NULL;
+
+   int ret = 0;
 
    video_shader_driver_get_current_shader(&shader_info);
 
-   param = &shader_info.data->parameters[type - MENU_SETTINGS_SHADER_PARAMETER_0];
+   param_prev = &shader_info.data->parameters[type - MENU_SETTINGS_SHADER_PARAMETER_0];
+   param_menu = shader ? &shader->parameters[type - 
+      MENU_SETTINGS_SHADER_PARAMETER_0] : NULL;
 
-   if (!param)
+   if (!param_prev || !param_menu)
       return menu_cbs_exit();
-   generic_shader_action_parameter_right(param, type, label, wraparound);
-   param = &shader_info.data->parameters[type - 
-      MENU_SETTINGS_SHADER_PARAMETER_0];
-   if (!param)
-      return menu_cbs_exit();
-   return generic_shader_action_parameter_right(param, type, label, wraparound);
+   ret = generic_shader_action_parameter_right(param_prev, type, label, wraparound);
+
+   param_menu->current = param_prev->current;
+
+   return ret;
 }
 
 int generic_action_cheat_toggle(size_t idx, unsigned type, const char *label,
