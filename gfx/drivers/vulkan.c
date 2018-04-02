@@ -1841,6 +1841,17 @@ static bool vulkan_frame(void *data, const void *frame,
             vulkan_draw_quad(vk, &quad);
          }
       }
+      else if (video_info->statistics_show)
+      {
+         struct font_params *osd_params = (struct font_params*)
+            &video_info->osd_stat_params;
+
+         if (osd_params)
+         {
+            font_driver_render_msg(video_info, NULL, video_info->stat_text,
+                  (const struct font_params*)&video_info->osd_stat_params);
+         }
+      }
 #endif
 
       if (msg)
@@ -2208,7 +2219,7 @@ static void vulkan_set_osd_msg(void *data,
       const char *msg,
       const void *params, void *font)
 {
-   font_driver_render_msg(video_info, font, msg, params);
+   font_driver_render_msg(video_info, font, msg, (const struct font_params *)params);
 }
 
 static uintptr_t vulkan_load_texture(void *video_data, void *data,

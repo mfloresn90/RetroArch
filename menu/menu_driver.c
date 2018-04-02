@@ -61,6 +61,12 @@
 
 #define PARTICLES_COUNT            100
 
+typedef struct menu_ctx_load_image
+{
+   void *data;
+   enum menu_image_type type;
+} menu_ctx_load_image_t;
+
 /* Menu drivers */
 static const menu_ctx_driver_t *menu_ctx_drivers[] = {
 #if defined(HAVE_XUI)
@@ -536,20 +542,26 @@ void menu_display_unset_framebuffer_dirty_flag(void)
  * RGUI or XMB use this. */
 float menu_display_get_dpi(void)
 {
-   gfx_ctx_metrics_t metrics;
+   unsigned width, height;
    settings_t *settings = config_get_ptr();
-   float            dpi = menu_dpi_override_value;
+   float            dpi   = 0.0f;
+   float diagonal         = 6.5f;
+
+   video_driver_get_size(&width, &height);
 
    if (!settings)
       return true;
 
-   metrics.type  = DISPLAY_METRIC_DPI;
-   metrics.value = &dpi;
+#ifdef RARCH_MOBILE
+   diagonal                = 5.0f;
+#endif
+
+   /* Generic dpi calculation formula,
+    * the divider is the screen diagonal in inches */
+   dpi = sqrt((width * width) + (height * height)) / diagonal;
 
    if (settings->bools.menu_dpi_override_enable)
       return settings->uints.menu_dpi_override_value;
-   else if (!video_context_driver_get_metrics(&metrics) || !dpi)
-      return menu_dpi_override_value;
 
    return dpi;
 }
@@ -630,7 +642,7 @@ void menu_display_draw_bg(menu_display_ctx_draw_t *draw,
    coords.vertex        = new_vertex;
    coords.tex_coord     = new_tex_coord;
    coords.lut_tex_coord = new_tex_coord;
-   coords.color         = (const float*)draw->color;   
+   coords.color         = (const float*)draw->color;
 
    draw->coords         = &coords;
    draw->scale_factor   = 1.0f;
@@ -1024,9 +1036,9 @@ void menu_display_rotate_z(menu_display_ctx_rotate_draw_t *draw,
    math_matrix_4x4 *b = NULL;
 
    if (
-         !draw                       || 
-         !menu_disp                  || 
-         !menu_disp->get_default_mvp || 
+         !draw                       ||
+         !menu_disp                  ||
+         !menu_disp->get_default_mvp ||
          menu_disp->handles_transform
       )
       return;
@@ -1059,6 +1071,14 @@ bool menu_display_get_tex_coords(menu_display_ctx_coord_draw_t *draw)
    return true;
 }
 
+static bool menu_driver_load_image(menu_ctx_load_image_t *load_image_info)
+{
+   if (menu_driver_ctx && menu_driver_ctx->load_image)
+      return menu_driver_ctx->load_image(menu_userdata,
+            load_image_info->data, load_image_info->type);
+   return false;
+}
+
 void menu_display_handle_thumbnail_upload(void *task_data,
       void *user_data, const char *err)
 {
@@ -1067,6 +1087,22 @@ void menu_display_handle_thumbnail_upload(void *task_data,
 
    load_image_info.data = img;
    load_image_info.type = MENU_IMAGE_THUMBNAIL;
+
+   menu_driver_load_image(&load_image_info);
+
+   image_texture_free(img);
+   free(img);
+   free(user_data);
+}
+
+void menu_display_handle_left_thumbnail_upload(void *task_data,
+      void *user_data, const char *err)
+{
+   menu_ctx_load_image_t load_image_info;
+   struct texture_image *img = (struct texture_image*)task_data;
+
+   load_image_info.data = img;
+   load_image_info.type = MENU_IMAGE_LEFT_THUMBNAIL;
 
    menu_driver_load_image(&load_image_info);
 
@@ -1789,14 +1825,6 @@ void menu_driver_populate_entries(menu_displaylist_info_t *info)
             info->label, info->type);
 }
 
-bool menu_driver_load_image(menu_ctx_load_image_t *load_image_info)
-{
-   if (menu_driver_ctx && menu_driver_ctx->load_image)
-      return menu_driver_ctx->load_image(menu_userdata,
-            load_image_info->data, load_image_info->type);
-   return false;
-}
-
 bool menu_driver_push_list(menu_ctx_displaylist_t *disp_list)
 {
    if (menu_driver_ctx->list_push)
@@ -2184,7 +2212,8 @@ bool menu_driver_ctl(enum rarch_menu_ctl_state state, void *data)
 
             if (!menu_driver_ctx || !menu_driver_ctx->update_thumbnail_path)
                return false;
-            menu_driver_ctx->update_thumbnail_path(menu_userdata, (unsigned)selection);
+            menu_driver_ctx->update_thumbnail_path(menu_userdata, (unsigned)selection, 'L');
+            menu_driver_ctx->update_thumbnail_path(menu_userdata, (unsigned)selection, 'R');
          }
          break;
       case RARCH_MENU_CTL_UPDATE_THUMBNAIL_IMAGE:

@@ -505,14 +505,14 @@ static int menu_displaylist_parse_system_info(menu_displaylist_info_t *info)
                  MENU_SETTINGS_CORE_INFO_NONE, 0, 0);
             snprintf(tmp, sizeof(tmp), "Port #%d device display name: %s",
                  controller,
-                 input_config_get_device_display_name(controller) ? 
+                 input_config_get_device_display_name(controller) ?
                     input_config_get_device_display_name(controller) : "N/A");
             menu_entries_append_enum(info->list, tmp, "",
                  MENU_ENUM_LABEL_SYSTEM_INFO_ENTRY,
                  MENU_SETTINGS_CORE_INFO_NONE, 0, 0);
             snprintf(tmp, sizeof(tmp), "Port #%d device config name: %s",
                  controller,
-                 input_config_get_device_display_name(controller) ? 
+                 input_config_get_device_display_name(controller) ?
                     input_config_get_device_config_name(controller) : "N/A");
             menu_entries_append_enum(info->list, tmp, "",
                  MENU_ENUM_LABEL_SYSTEM_INFO_ENTRY,
@@ -1676,7 +1676,7 @@ static int menu_displaylist_parse_database_entry(menu_displaylist_info_t *info)
             if (!match_found)
                continue;
 
-            rdb_entry_start_game_selection_ptr = j;
+            menu->rdb_entry_start_game_selection_ptr = j;
          }
       }
 
@@ -2596,7 +2596,7 @@ static int menu_displaylist_parse_load_content_settings(
       }
 
 
-      if (settings->bools.quick_menu_show_save_load_state 
+      if (settings->bools.quick_menu_show_save_load_state
 #ifdef HAVE_CHEEVOS
           && !(settings->bools.cheevos_hardcore_mode_enable && cheevos_loaded)
 #endif
@@ -2745,7 +2745,7 @@ static int menu_displaylist_parse_horizontal_content_actions(
       menu_displaylist_info_t *info)
 {
    bool content_loaded             = false;
-   unsigned idx                    = rpl_entry_selection_ptr;
+   unsigned idx                    = 0;
    menu_handle_t *menu             = NULL;
    const char *label               = NULL;
    const char *entry_path          = NULL;
@@ -2758,6 +2758,8 @@ static int menu_displaylist_parse_horizontal_content_actions(
 
    if (!menu_driver_ctl(RARCH_MENU_CTL_DRIVER_DATA_GET, &menu))
       return -1;
+
+   idx                             = menu->rpl_entry_selection_ptr;
 
    menu_driver_ctl(RARCH_MENU_CTL_PLAYLIST_GET, &playlist);
 
@@ -2812,6 +2814,15 @@ static int menu_displaylist_parse_horizontal_content_actions(
                msg_hash_to_str(MENU_ENUM_LABEL_ADD_TO_FAVORITES_PLAYLIST),
                MENU_ENUM_LABEL_ADD_TO_FAVORITES_PLAYLIST, FILE_TYPE_PLAYLIST_ENTRY, 0, 0);
       }
+
+      if (settings->bools.quick_menu_show_add_to_favorites)
+      {
+         menu_entries_append_enum(info->list,
+               msg_hash_to_str(MENU_ENUM_LABEL_VALUE_RESET_CORE_ASSOCIATION),
+               msg_hash_to_str(MENU_ENUM_LABEL_RESET_CORE_ASSOCIATION),
+               MENU_ENUM_LABEL_RESET_CORE_ASSOCIATION, FILE_TYPE_PLAYLIST_ENTRY, 0, 0);
+      }
+
    }
 
    if (!string_is_empty(db_name) && (!content_loaded ||
@@ -4255,8 +4266,9 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
       case DISPLAYLIST_CORE_CONTENT:
          menu_entries_ctl(MENU_ENTRIES_CTL_CLEAR, info->list);
 #ifdef HAVE_NETWORKING
-         print_buf_lines(info->list, core_buf, "",
-               (int)core_len, FILE_TYPE_DOWNLOAD_CORE_CONTENT, true, false);
+         print_buf_lines(info->list, menu->core_buf, "",
+               (int)menu->core_len,
+               FILE_TYPE_DOWNLOAD_CORE_CONTENT, true, false);
          info->need_push    = true;
          info->need_refresh = true;
          info->need_clear   = true;
@@ -4273,9 +4285,9 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
             if (str_list->elems[0].data)
                strlcpy(new_label, str_list->elems[0].data, sizeof(new_label));
             if (str_list->elems[1].data)
-               strlcpy(core_buf, str_list->elems[1].data, core_len);
-            print_buf_lines(info->list, core_buf, new_label,
-                  (int)core_len, FILE_TYPE_DOWNLOAD_URL, false, false);
+               strlcpy(menu->core_buf, str_list->elems[1].data, menu->core_len);
+            print_buf_lines(info->list, menu->core_buf, new_label,
+                  (int)menu->core_len, FILE_TYPE_DOWNLOAD_URL, false, false);
             info->need_push    = true;
             info->need_refresh = true;
             info->need_clear   = true;
@@ -4295,8 +4307,8 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
             fill_pathname_join(new_label,
                   settings->paths.network_buildbot_assets_url,
                   "cores", sizeof(new_label));
-            print_buf_lines(info->list, core_buf, new_label,
-                  (int)core_len, FILE_TYPE_DOWNLOAD_URL, true, false);
+            print_buf_lines(info->list, menu->core_buf, new_label,
+                  (int)menu->core_len, FILE_TYPE_DOWNLOAD_URL, true, false);
             info->need_push    = true;
             info->need_refresh = true;
             info->need_clear   = true;
@@ -4306,8 +4318,8 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
       case DISPLAYLIST_CORES_UPDATER:
          menu_entries_ctl(MENU_ENTRIES_CTL_CLEAR, info->list);
 #ifdef HAVE_NETWORKING
-         print_buf_lines(info->list, core_buf, "",
-               (int)core_len, FILE_TYPE_DOWNLOAD_CORE, true, true);
+         print_buf_lines(info->list, menu->core_buf, "",
+               (int)menu->core_len, FILE_TYPE_DOWNLOAD_CORE, true, true);
          info->need_push    = true;
          info->need_refresh = true;
          info->need_clear   = true;
@@ -4316,8 +4328,8 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
       case DISPLAYLIST_THUMBNAILS_UPDATER:
 #ifdef HAVE_NETWORKING
          menu_entries_ctl(MENU_ENTRIES_CTL_CLEAR, info->list);
-         print_buf_lines(info->list, core_buf, "",
-               (int)core_len, FILE_TYPE_DOWNLOAD_THUMBNAIL_CONTENT,
+         print_buf_lines(info->list, menu->core_buf, "",
+               (int)menu->core_len, FILE_TYPE_DOWNLOAD_THUMBNAIL_CONTENT,
                true, false);
          info->need_push    = true;
          info->need_refresh = true;
@@ -4327,8 +4339,8 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
       case DISPLAYLIST_LAKKA:
          menu_entries_ctl(MENU_ENTRIES_CTL_CLEAR, info->list);
 #ifdef HAVE_NETWORKING
-         print_buf_lines(info->list, core_buf, "",
-               (int)core_len, FILE_TYPE_DOWNLOAD_LAKKA,
+         print_buf_lines(info->list, menu->core_buf, "",
+               (int)menu->core_len, FILE_TYPE_DOWNLOAD_LAKKA,
                true, false);
          info->need_push    = true;
          info->need_refresh = true;
@@ -4951,6 +4963,17 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
          menu_displaylist_parse_settings_enum(menu, info,
                MENU_ENUM_LABEL_SLOWMOTION_RATIO,
                PARSE_ONLY_FLOAT, false);
+         menu_displaylist_parse_settings_enum(menu, info,
+            MENU_ENUM_LABEL_RUN_AHEAD_ENABLED,
+            PARSE_ONLY_BOOL, false);
+         menu_displaylist_parse_settings_enum(menu, info,
+            MENU_ENUM_LABEL_RUN_AHEAD_FRAMES,
+            PARSE_ONLY_UINT, false);
+#if defined(HAVE_DYNAMIC) && HAVE_DYNAMIC
+         menu_displaylist_parse_settings_enum(menu, info,
+            MENU_ENUM_LABEL_RUN_AHEAD_SECONDARY_INSTANCE,
+            PARSE_ONLY_BOOL, false);
+#endif
          if (settings->bools.menu_show_advanced_settings)
             menu_displaylist_parse_settings_enum(menu, info,
                   MENU_ENUM_LABEL_MENU_THROTTLE_FRAMERATE,
@@ -4987,6 +5010,15 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
          menu_entries_ctl(MENU_ENTRIES_CTL_CLEAR, info->list);
          menu_displaylist_parse_settings_enum(menu, info,
                MENU_ENUM_LABEL_VIDEO_FONT_ENABLE,
+               PARSE_ONLY_BOOL, false);
+         menu_displaylist_parse_settings_enum(menu, info,
+               MENU_ENUM_LABEL_FPS_SHOW,
+               PARSE_ONLY_BOOL, false);
+         menu_displaylist_parse_settings_enum(menu, info,
+               MENU_ENUM_LABEL_STATISTICS_SHOW,
+               PARSE_ONLY_BOOL, false);
+         menu_displaylist_parse_settings_enum(menu, info,
+               MENU_ENUM_LABEL_FRAMECOUNT_SHOW,
                PARSE_ONLY_BOOL, false);
          menu_displaylist_parse_settings_enum(menu, info,
                MENU_ENUM_LABEL_VIDEO_FONT_PATH,
@@ -5311,6 +5343,9 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
                PARSE_ONLY_FLOAT, false);
          menu_displaylist_parse_settings_enum(menu, info,
                MENU_ENUM_LABEL_THUMBNAILS,
+               PARSE_ONLY_UINT, false);
+         menu_displaylist_parse_settings_enum(menu, info,
+               MENU_ENUM_LABEL_LEFT_THUMBNAILS,
                PARSE_ONLY_UINT, false);
 
          info->need_refresh = true;
@@ -5751,12 +5786,6 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
                MENU_ENUM_LABEL_SUSPEND_SCREENSAVER_ENABLE,
                PARSE_ONLY_BOOL, false);
          menu_displaylist_parse_settings_enum(menu, info,
-               MENU_ENUM_LABEL_FPS_SHOW,
-               PARSE_ONLY_BOOL, false);
-         menu_displaylist_parse_settings_enum(menu, info,
-               MENU_ENUM_LABEL_FRAMECOUNT_SHOW,
-               PARSE_ONLY_BOOL, false);
-         menu_displaylist_parse_settings_enum(menu, info,
                MENU_ENUM_LABEL_SCREEN_RESOLUTION,
                PARSE_ACTION, false);
          menu_displaylist_parse_settings_enum(menu, info,
@@ -6141,7 +6170,7 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
       case DISPLAYLIST_LOAD_CONTENT_LIST:
       case DISPLAYLIST_LOAD_CONTENT_SPECIAL:
          menu_entries_ctl(MENU_ENTRIES_CTL_CLEAR, info->list);
-		 
+
          if (!string_is_empty(settings->paths.directory_menu_content))
             menu_entries_append_enum(info->list,
                   msg_hash_to_str(MENU_ENUM_LABEL_VALUE_FAVORITES),
@@ -6634,17 +6663,17 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
             info->type_default = FILE_TYPE_SHADER_PRESET;
 
             if (video_shader_is_supported(RARCH_SHADER_CG) &&
-                  video_shader_get_type_from_ext("cgp", &is_preset) 
+                  video_shader_get_type_from_ext("cgp", &is_preset)
                   != RARCH_SHADER_NONE)
                string_list_append(str_list, "cgp", attr);
 
             if (video_shader_is_supported(RARCH_SHADER_GLSL) &&
-                  video_shader_get_type_from_ext("glslp", &is_preset) 
+                  video_shader_get_type_from_ext("glslp", &is_preset)
                   != RARCH_SHADER_NONE)
                string_list_append(str_list, "glslp", attr);
 
             if (video_shader_is_supported(RARCH_SHADER_SLANG) &&
-                  video_shader_get_type_from_ext("slangp", &is_preset) 
+                  video_shader_get_type_from_ext("slangp", &is_preset)
                   != RARCH_SHADER_NONE)
                string_list_append(str_list, "slangp", attr);
             string_list_join_concat(new_exts, sizeof(new_exts), str_list, "|");
@@ -6673,17 +6702,17 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type, void *data)
 
 
             if (video_shader_is_supported(RARCH_SHADER_CG) &&
-                  video_shader_get_type_from_ext("cg", &is_preset) 
+                  video_shader_get_type_from_ext("cg", &is_preset)
                   != RARCH_SHADER_NONE)
                string_list_append(str_list, "cg", attr);
 
             if (video_shader_is_supported(RARCH_SHADER_GLSL) &&
-                  video_shader_get_type_from_ext("glsl", &is_preset) 
+                  video_shader_get_type_from_ext("glsl", &is_preset)
                   != RARCH_SHADER_NONE)
                string_list_append(str_list, "glsl", attr);
 
             if (video_shader_is_supported(RARCH_SHADER_SLANG) &&
-                  video_shader_get_type_from_ext("slang", &is_preset) 
+                  video_shader_get_type_from_ext("slang", &is_preset)
                   != RARCH_SHADER_NONE)
                string_list_append(str_list, "slang", attr);
 

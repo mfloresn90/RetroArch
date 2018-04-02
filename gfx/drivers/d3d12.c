@@ -16,7 +16,7 @@
 #define CINTERFACE
 
 #include <assert.h>
-#include <stdbool.h>
+#include <boolean.h>
 #include <string/stdstring.h>
 #include <file/file_path.h>
 
@@ -871,9 +871,9 @@ static void d3d12_gfx_free(void* data)
 static void*
 d3d12_gfx_init(const video_info_t* video, const input_driver_t** input, void** input_data)
 {
-   WNDCLASSEX     wndclass = { 0 };
    MONITORINFOEX  current_mon;
    HMONITOR       hm_to_use;
+   WNDCLASSEX     wndclass = { 0 };
    settings_t*    settings = config_get_ptr();
    d3d12_video_t* d3d12    = (d3d12_video_t*)calloc(1, sizeof(*d3d12));
 
@@ -1298,19 +1298,20 @@ static bool d3d12_gfx_frame(
             while (texture_sem->stage_mask)
             {
                {
-                  D3D12_CPU_DESCRIPTOR_HANDLE handle = {
+                  D3D12_CPU_DESCRIPTOR_HANDLE handle   = {
                      d3d12->pass[i].textures.ptr - d3d12->desc.srv_heap.gpu.ptr +
-                     d3d12->desc.srv_heap.cpu.ptr +
-                     texture_sem->binding * d3d12->desc.srv_heap.stride
+                        d3d12->desc.srv_heap.cpu.ptr +
+                        texture_sem->binding * d3d12->desc.srv_heap.stride
                   };
-                  d3d12_texture_t*                tex  = texture_sem->texture_data;
+                  d3d12_texture_t*                tex  = (d3d12_texture_t*)texture_sem->texture_data;
                   D3D12_SHADER_RESOURCE_VIEW_DESC desc = { tex->desc.Format };
 
-                  desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-                  desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
-                  desc.Texture2D.MipLevels     = tex->desc.MipLevels;
+                  desc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                  desc.ViewDimension                   = D3D12_SRV_DIMENSION_TEXTURE2D;
+                  desc.Texture2D.MipLevels             = tex->desc.MipLevels;
 
-                  D3D12CreateShaderResourceView(d3d12->device, tex->handle, &desc, handle);
+                  D3D12CreateShaderResourceView(d3d12->device,
+                        tex->handle, &desc, handle);
                }
 
                {
@@ -1454,7 +1455,21 @@ static bool d3d12_gfx_frame(
       D3D12IASetVertexBuffers(d3d12->queue.cmd, 0, 1, &d3d12->sprites.vbo_view);
       menu_driver_frame(video_info);
    }
+   else if (video_info->statistics_show)
+   {
+      struct font_params *osd_params = (struct font_params*)
+         &video_info->osd_stat_params;
 
+      if (osd_params)
+      {
+         D3D12SetPipelineState(d3d12->queue.cmd, d3d12->sprites.pipe_blend);
+         D3D12RSSetViewports(d3d12->queue.cmd, 1, &d3d12->chain.viewport);
+         D3D12RSSetScissorRects(d3d12->queue.cmd, 1, &d3d12->chain.scissorRect);
+         D3D12IASetVertexBuffers(d3d12->queue.cmd, 0, 1, &d3d12->sprites.vbo_view);
+         font_driver_render_msg(video_info, NULL, video_info->stat_text,
+               (const struct font_params*)&video_info->osd_stat_params);
+      }
+   }
 #ifdef HAVE_OVERLAY
    if (d3d12->overlays.enabled)
    {
@@ -1582,14 +1597,19 @@ static bool d3d12_gfx_read_viewport(void* data, uint8_t* buffer, bool is_idle)
 }
 
 static void d3d12_set_menu_texture_frame(
-      void* data, const void* frame, bool rgb32, unsigned width, unsigned height, float alpha)
+      void* data, const void* frame, bool rgb32,
+      unsigned width, unsigned height, float alpha)
 {
-   d3d12_video_t* d3d12 = (d3d12_video_t*)data;
-   int            pitch = width * (rgb32 ? sizeof(uint32_t) : sizeof(uint16_t));
-   DXGI_FORMAT    format =
-         rgb32 ? DXGI_FORMAT_B8G8R8A8_UNORM : (DXGI_FORMAT)DXGI_FORMAT_EX_A4R4G4B4_UNORM;
+   d3d12_video_t* d3d12    = (d3d12_video_t*)data;
+   settings_t*    settings = config_get_ptr();
+   int            pitch    = width * 
+      (rgb32 ? sizeof(uint32_t) : sizeof(uint16_t));
+   DXGI_FORMAT    format   = rgb32 ? DXGI_FORMAT_B8G8R8A8_UNORM 
+      : (DXGI_FORMAT)DXGI_FORMAT_EX_A4R4G4B4_UNORM;
 
-   if (d3d12->menu.texture.desc.Width != width || d3d12->menu.texture.desc.Height != height)
+   if (
+         d3d12->menu.texture.desc.Width  != width || 
+         d3d12->menu.texture.desc.Height != height)
    {
       d3d12->menu.texture.desc.Width  = width;
       d3d12->menu.texture.desc.Height = height;
@@ -1598,13 +1618,14 @@ static void d3d12_set_menu_texture_frame(
       d3d12_init_texture(d3d12->device, &d3d12->menu.texture);
    }
 
-   d3d12_update_texture(width, height, pitch, format, frame, &d3d12->menu.texture);
+   d3d12_update_texture(width, height, pitch,
+         format, frame, &d3d12->menu.texture);
 
    d3d12->menu.alpha = alpha;
 
    {
       D3D12_RANGE     read_range = { 0, 0 };
-      d3d12_vertex_t* v;
+      d3d12_vertex_t* v          = NULL;
 
       D3D12Map(d3d12->menu.vbo, 0, &read_range, (void**)&v);
       v[0].color[3] = alpha;
@@ -1614,19 +1635,27 @@ static void d3d12_set_menu_texture_frame(
       D3D12Unmap(d3d12->menu.vbo, 0, NULL);
    }
 
-   d3d12->menu.texture.sampler = config_get_ptr()->bools.menu_linear_filter
-                                       ? d3d12->samplers[RARCH_FILTER_LINEAR][RARCH_WRAP_DEFAULT]
-                                       : d3d12->samplers[RARCH_FILTER_NEAREST][RARCH_WRAP_DEFAULT];
+   d3d12->menu.texture.sampler = settings->bools.menu_linear_filter
+      ? d3d12->samplers[RARCH_FILTER_LINEAR][RARCH_WRAP_DEFAULT]
+      : d3d12->samplers[RARCH_FILTER_NEAREST][RARCH_WRAP_DEFAULT];
 }
-static void d3d12_set_menu_texture_enable(void* data, bool state, bool full_screen)
+
+static void d3d12_set_menu_texture_enable(void* data,
+      bool state, bool full_screen)
 {
-   d3d12_video_t* d3d12 = (d3d12_video_t*)data;
+   d3d12_video_t* d3d12   = (d3d12_video_t*)data;
+
+   if (!d3d12)
+      return;
 
    d3d12->menu.enabled    = state;
    d3d12->menu.fullscreen = full_screen;
 }
 
-static void d3d12_gfx_show_mouse(void* data, bool state) { win32_show_cursor(state); }
+static void d3d12_gfx_show_mouse(void* data, bool state)
+{
+   win32_show_cursor(state);
+}
 
 static void d3d12_gfx_set_aspect_ratio(void* data, unsigned aspect_ratio_idx)
 {
@@ -1648,21 +1677,21 @@ static void d3d12_gfx_apply_state_changes(void* data)
 }
 
 static void d3d12_gfx_set_osd_msg(
-      void* data, video_frame_info_t* video_info, const char* msg, const void* params, void* font)
+      void* data, video_frame_info_t* video_info,
+      const char* msg, const void* params, void* font)
 {
    d3d12_video_t* d3d12 = (d3d12_video_t*)data;
 
-   if (d3d12)
-   {
-      if (d3d12->sprites.enabled)
-         font_driver_render_msg(video_info, font, msg, params);
-      else
-         printf("OSD msg: %s\n", msg);
-   }
+   if (!d3d12 || !d3d12->sprites.enabled)
+      return;
+
+   font_driver_render_msg(video_info, font, msg,
+         (const struct font_params*)params);
 }
 
 static uintptr_t d3d12_gfx_load_texture(
-      void* video_data, void* data, bool threaded, enum texture_filter_type filter_type)
+      void* video_data, void* data, bool threaded,
+      enum texture_filter_type filter_type)
 {
    d3d12_texture_t*      texture = NULL;
    d3d12_video_t*        d3d12   = (d3d12_video_t*)video_data;
@@ -1681,12 +1710,14 @@ static uintptr_t d3d12_gfx_load_texture(
       case TEXTURE_FILTER_MIPMAP_LINEAR:
          texture->desc.MipLevels = UINT16_MAX;
       case TEXTURE_FILTER_LINEAR:
-         texture->sampler = d3d12->samplers[RARCH_FILTER_LINEAR][RARCH_WRAP_EDGE];
+         texture->sampler = d3d12->samplers[
+            RARCH_FILTER_LINEAR][RARCH_WRAP_EDGE];
          break;
       case TEXTURE_FILTER_MIPMAP_NEAREST:
          texture->desc.MipLevels = UINT16_MAX;
       case TEXTURE_FILTER_NEAREST:
-         texture->sampler = d3d12->samplers[RARCH_FILTER_NEAREST][RARCH_WRAP_EDGE];
+         texture->sampler = d3d12->samplers[
+            RARCH_FILTER_NEAREST][RARCH_WRAP_EDGE];
          break;
    }
 
@@ -1698,7 +1729,8 @@ static uintptr_t d3d12_gfx_load_texture(
    d3d12_init_texture(d3d12->device, texture);
 
    d3d12_update_texture(
-         image->width, image->height, 0, DXGI_FORMAT_B8G8R8A8_UNORM, image->pixels, texture);
+         image->width, image->height, 0,
+         DXGI_FORMAT_B8G8R8A8_UNORM, image->pixels, texture);
 
    return (uintptr_t)texture;
 }

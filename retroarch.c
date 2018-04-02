@@ -118,6 +118,10 @@
 
 #include "command.h"
 
+#ifdef HAVE_RUNAHEAD
+#include "runahead/run_ahead.h"
+#endif
+
 #define _PSUPP(var, name, desc) printf("  %s:\n\t\t%s: %s\n", name, desc, _##var##_supp ? "yes" : "no")
 
 #define FAIL_CPU(simd_type) do { \
@@ -725,6 +729,10 @@ static void retroarch_parse_input_and_config(int argc, char *argv[])
             path_set(RARCH_PATH_CONFIG, optarg);
             break;
 
+         case RA_OPT_APPENDCONFIG:
+            path_set(RARCH_PATH_CONFIG_APPEND, optarg);
+            break;
+
          case 's':
             strlcpy(global->name.savefile, optarg,
                   sizeof(global->name.savefile));
@@ -739,6 +747,11 @@ static void retroarch_parse_input_and_config(int argc, char *argv[])
                   RARCH_OVERRIDE_SETTING_STATE_PATH, NULL);
             break;
 
+         /* Must handle '?' otherwise you get an infinite loop */
+         case '?':
+            retroarch_print_help(argv[0]);
+            retroarch_fail(1, "retroarch_parse_input()");
+            break;
          /* All other arguments are handled in the second pass */
       }
    }
@@ -1022,10 +1035,6 @@ static void retroarch_parse_input_and_config(int argc, char *argv[])
             }
             break;
 
-         case RA_OPT_APPENDCONFIG:
-            path_set(RARCH_PATH_CONFIG_APPEND, optarg);
-            break;
-
          case RA_OPT_SIZE:
             if (sscanf(optarg, "%ux%u",
                      recording_driver_get_width(),
@@ -1070,6 +1079,7 @@ static void retroarch_parse_input_and_config(int argc, char *argv[])
 
          case 'c':
          case 'h':
+         case RA_OPT_APPENDCONFIG:
          case 's':
          case 'S':
             break; /* Handled in the first pass */
@@ -3242,7 +3252,13 @@ int runloop_iterate(unsigned *sleep_ms)
    if ((settings->uints.video_frame_delay > 0) && !input_nonblock_state)
       retro_sleep(settings->uints.video_frame_delay);
 
-   core_run();
+#ifdef HAVE_RUNAHEAD
+   /* Run Ahead Feature replaces the call to core_run in this loop */
+   if (settings->bools.run_ahead_enabled && settings->uints.run_ahead_frames > 0)
+      run_ahead(settings->uints.run_ahead_frames, settings->bools.run_ahead_secondary_instance);
+   else
+#endif
+      core_run();
 
 #ifdef HAVE_CHEEVOS
    if (runloop_check_cheevos())

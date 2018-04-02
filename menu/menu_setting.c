@@ -1523,7 +1523,7 @@ static void get_string_representation_bind_device(void * data, char *s,
 
    if (map < max_devices)
    {
-      const char *device_name = input_config_get_device_display_name(map) ? 
+      const char *device_name = input_config_get_device_display_name(map) ?
                                 input_config_get_device_display_name(map) : input_config_get_device_name(map);
 
       if (!string_is_empty(device_name))
@@ -3315,6 +3315,21 @@ static bool setting_append_list(
 
             CONFIG_BOOL(
                   list, list_info,
+                  &settings->bools.video_statistics_show,
+                  MENU_ENUM_LABEL_STATISTICS_SHOW,
+                  MENU_ENUM_LABEL_VALUE_STATISTICS_SHOW,
+                  fps_show,
+                  MENU_ENUM_LABEL_VALUE_OFF,
+                  MENU_ENUM_LABEL_VALUE_ON,
+                  &group_info,
+                  &subgroup_info,
+                  parent_group,
+                  general_write_handler,
+                  general_read_handler,
+                  SD_FLAG_NONE);
+
+            CONFIG_BOOL(
+                  list, list_info,
                   &settings->bools.video_framecount_show,
                   MENU_ENUM_LABEL_FRAMECOUNT_SHOW,
                   MENU_ENUM_LABEL_VALUE_FRAMECOUNT_SHOW,
@@ -4821,6 +4836,51 @@ static bool setting_append_list(
 
          CONFIG_BOOL(
                list, list_info,
+               &settings->bools.run_ahead_enabled,
+               MENU_ENUM_LABEL_RUN_AHEAD_ENABLED,
+               MENU_ENUM_LABEL_VALUE_RUN_AHEAD_ENABLED,
+               false,
+               MENU_ENUM_LABEL_VALUE_OFF,
+               MENU_ENUM_LABEL_VALUE_ON,
+               &group_info,
+               &subgroup_info,
+               parent_group,
+               general_write_handler,
+               general_read_handler,
+               SD_FLAG_NONE
+               );
+
+         CONFIG_UINT(
+            list, list_info,
+            &settings->uints.run_ahead_frames,
+            MENU_ENUM_LABEL_RUN_AHEAD_FRAMES,
+            MENU_ENUM_LABEL_VALUE_RUN_AHEAD_FRAMES,
+            1,
+            &group_info,
+            &subgroup_info,
+            parent_group,
+            general_write_handler,
+            general_read_handler);
+         menu_settings_list_current_add_range(list, list_info, 1, 6, 1, true, true);
+
+         CONFIG_BOOL(
+               list, list_info,
+               &settings->bools.run_ahead_secondary_instance,
+               MENU_ENUM_LABEL_RUN_AHEAD_SECONDARY_INSTANCE,
+               MENU_ENUM_LABEL_VALUE_RUN_AHEAD_SECONDARY_INSTANCE,
+               false,
+               MENU_ENUM_LABEL_VALUE_OFF,
+               MENU_ENUM_LABEL_VALUE_ON,
+               &group_info,
+               &subgroup_info,
+               parent_group,
+               general_write_handler,
+               general_read_handler,
+               SD_FLAG_NONE
+               );
+
+         CONFIG_BOOL(
+               list, list_info,
                &settings->bools.menu_throttle_framerate,
                MENU_ENUM_LABEL_MENU_THROTTLE_FRAMERATE,
                MENU_ENUM_LABEL_VALUE_MENU_ENUM_THROTTLE_FRAMERATE,
@@ -5485,7 +5545,7 @@ static bool setting_append_list(
 
          if (string_is_equal(settings->arrays.menu_driver, "glui"))
          {
-            /* only GLUI uses these values, don't show 
+            /* only GLUI uses these values, don't show
              * them on other drivers */
             CONFIG_BOOL(
                   list, list_info,
@@ -5519,7 +5579,7 @@ static bool setting_append_list(
 #ifdef HAVE_XMB
          if (string_is_equal(settings->arrays.menu_driver, "xmb"))
          {
-            /* only XMB uses these values, don't show 
+            /* only XMB uses these values, don't show
              * them on other drivers. */
             CONFIG_UINT(
                   list, list_info,
@@ -5754,7 +5814,7 @@ static bool setting_append_list(
                   general_write_handler,
                   general_read_handler,
                   SD_FLAG_NONE);
-				  
+
 #ifdef HAVE_LAKKA
             CONFIG_BOOL(
                   list, list_info,
@@ -5771,7 +5831,7 @@ static bool setting_append_list(
                   general_read_handler,
                   SD_FLAG_NONE);
 #endif
-				  
+
 #ifdef HAVE_XMB
          if (string_is_equal(settings->arrays.menu_driver, "xmb"))
          {
@@ -5790,7 +5850,7 @@ static bool setting_append_list(
                   general_read_handler,
                   SD_FLAG_NONE);
             settings_data_list_current_add_flags(list, list_info, SD_FLAG_LAKKA_ADVANCED);
-			
+
 				CONFIG_STRING(
 				   list, list_info,
 				   settings->paths.menu_content_show_settings_password,
@@ -5806,7 +5866,7 @@ static bool setting_append_list(
 				settings_data_list_current_add_flags(list, list_info, SD_FLAG_ALLOW_INPUT | SD_FLAG_LAKKA_ADVANCED);
 			}
 #endif
-			
+
             CONFIG_BOOL(
                   list, list_info,
                   &settings->bools.menu_content_show_favorites,
@@ -5924,7 +5984,7 @@ static bool setting_append_list(
 #ifdef HAVE_MATERIALUI
          if (string_is_equal(settings->arrays.menu_driver, "glui"))
          {
-            /* only MaterialUI uses these values, don't show 
+            /* only MaterialUI uses these values, don't show
              * them on other drivers. */
             CONFIG_BOOL(
                   list, list_info,
@@ -6007,6 +6067,19 @@ static bool setting_append_list(
                   MENU_ENUM_LABEL_THUMBNAILS,
                   MENU_ENUM_LABEL_VALUE_THUMBNAILS,
                   menu_thumbnails_default,
+                  &group_info,
+                  &subgroup_info,
+                  parent_group,
+                  general_write_handler,
+                  general_read_handler);
+            menu_settings_list_current_add_range(list, list_info, 0, 3, 1, true, true);
+
+            CONFIG_UINT(
+                  list, list_info,
+                  &settings->uints.menu_left_thumbnails,
+                  MENU_ENUM_LABEL_LEFT_THUMBNAILS,
+                  MENU_ENUM_LABEL_VALUE_LEFT_THUMBNAILS,
+                  menu_left_thumbnails_default,
                   &group_info,
                   &subgroup_info,
                   parent_group,

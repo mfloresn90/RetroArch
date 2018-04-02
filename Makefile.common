@@ -258,7 +258,18 @@ OBJ += frontend/frontend.o \
        record/drivers/record_null.o \
        $(LIBRETRO_COMM_DIR)/features/features_cpu.o \
        performance_counters.o \
-       verbosity.o
+       verbosity.o \
+
+ifeq ($(HAVE_RUNAHEAD), 1)
+DEFINES += -DHAVE_RUNAHEAD
+OBJ += runahead/copy_load_info.o \
+       runahead/dirty_input.o \
+       runahead/mem_util.o \
+       runahead/mylist.o \
+       runahead/run_ahead.o \
+       runahead/secondary_core.o
+endif
+
 
 
 ifeq ($(HAVE_CC_RESAMPLER), 1)

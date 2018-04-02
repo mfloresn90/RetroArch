@@ -92,6 +92,7 @@ typedef struct settings
       bool video_shared_context;
       bool video_force_srgb_disable;
       bool video_fps_show;
+      bool video_statistics_show;
       bool video_framecount_show;
       bool video_msg_bgcolor_enable;
 
@@ -222,6 +223,8 @@ typedef struct settings
       bool playlist_entry_remove;
       bool playlist_entry_rename;
       bool rewind_enable;
+      bool run_ahead_enabled;
+      bool run_ahead_secondary_instance;
       bool pause_nonactive;
       bool block_sram_overwrite;
       bool savestate_auto_index;
@@ -347,6 +350,7 @@ typedef struct settings
       unsigned video_msg_bgcolor_blue;
 
       unsigned menu_thumbnails;
+      unsigned menu_left_thumbnails;
       unsigned menu_dpi_override_value;
       unsigned menu_entry_normal_color;
       unsigned menu_entry_hover_color;
@@ -379,6 +383,8 @@ typedef struct settings
       unsigned input_remap_ids[MAX_USERS][RARCH_CUSTOM_BIND_LIST_END];
 
       unsigned led_map[MAX_LEDS];
+
+      unsigned run_ahead_frames;
    } uints;
 
    struct

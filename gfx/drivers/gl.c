@@ -853,7 +853,7 @@ static void gl_set_osd_msg(void *data,
       const char *msg,
       const void *params, void *font)
 {
-   font_driver_render_msg(video_info, font, msg, params);
+   font_driver_render_msg(video_info, font, msg, (const struct font_params *)params);
 }
 
 #if defined(HAVE_MENU)
@@ -1143,6 +1143,24 @@ static bool gl_frame(void *data, const void *frame,
 
       if (gl->menu_texture)
          gl_draw_texture(gl, video_info);
+   }
+   else if (video_info->statistics_show)
+   {
+      struct font_params *osd_params = (struct font_params*)
+         &video_info->osd_stat_params;
+
+      if (osd_params)
+      {
+         font_driver_render_msg(video_info, NULL, video_info->stat_text,
+               (const struct font_params*)&video_info->osd_stat_params);
+
+#if 0
+         osd_params->y               = 0.350f;
+         osd_params->scale           = 0.75f;
+         font_driver_render_msg(video_info, NULL, video_info->chat_text,
+               (const struct font_params*)&video_info->osd_stat_params);
+#endif
+      }
    }
 #endif
 

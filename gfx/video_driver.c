@@ -31,6 +31,7 @@
 #include <gfx/video_frame.h>
 #include <formats/image.h>
 
+#include "../audio/audio_driver.h"
 #include "../menu/menu_shader.h"
 
 #ifdef HAVE_CONFIG_H
@@ -1321,9 +1322,13 @@ bool video_monitor_fps_statistics(double *refresh_rate,
       accum_var         += diff * diff;
    }
 
-   *deviation     = sqrt((double)accum_var / (samples - 1)) / avg;
-   *refresh_rate  = 1000000.0 / avg;
-   *sample_points = samples;
+   *deviation        = sqrt((double)accum_var / (samples - 1)) / avg;
+
+   if (refresh_rate)
+      *refresh_rate  = 1000000.0 / avg;
+
+   if (sample_points)
+      *sample_points = samples;
 
    return true;
 }
@@ -1583,6 +1588,11 @@ void video_driver_unset_stub_frame(void)
       current_video->frame = frame_bak;
 
    frame_bak = NULL;
+}
+
+bool video_driver_is_stub_frame(void)
+{
+   return current_video->frame == video_null.frame;
 }
 
 bool video_driver_supports_recording(void)
@@ -2146,6 +2156,11 @@ void video_driver_set_active(void)
    video_driver_active = true;
 }
 
+void video_driver_unset_active(void)
+{
+   video_driver_active = false;
+}
+
 bool video_driver_is_active(void)
 {
    return video_driver_active;
@@ -2341,7 +2356,7 @@ void video_driver_frame(const void *data, unsigned width,
    video_frame_info_t video_info;
    static retro_time_t curr_time;
    static retro_time_t fps_time;
-   static float last_fps;
+   static float last_fps, frame_time;
    unsigned output_width                             = 0;
    unsigned output_height                            = 0;
    unsigned output_pitch                             = 0;
@@ -2381,7 +2396,8 @@ void video_driver_frame(const void *data, unsigned width,
       unsigned write_index                         =
          video_driver_frame_time_count++ &
          (MEASURE_FRAME_TIME_SAMPLES_COUNT - 1);
-      video_driver_frame_time_samples[write_index] = new_time - fps_time;
+      frame_time                                   = new_time - fps_time;
+      video_driver_frame_time_samples[write_index] = frame_time;
       fps_time                                     = new_time;
 
       if (video_driver_frame_count == 1)
@@ -2390,10 +2406,10 @@ void video_driver_frame(const void *data, unsigned width,
       if ((video_driver_frame_count % FPS_UPDATE_INTERVAL) == 0)
       {
          char frames_text[64];
+         last_fps = TIME_TO_FPS(curr_time, new_time, FPS_UPDATE_INTERVAL);
 
          if (video_info.fps_show)
          {
-            last_fps = TIME_TO_FPS(curr_time, new_time, FPS_UPDATE_INTERVAL);
             snprintf(video_info.fps_text, sizeof(video_info.fps_text),
                   "||  FPS: %6.1f ", last_fps);
             if (video_info.framecount_show)
@@ -2456,6 +2472,10 @@ void video_driver_frame(const void *data, unsigned width,
       video_driver_window_title_update = true;
    }
 
+   video_info.frame_rate = last_fps;
+   video_info.frame_time = frame_time / 1000.0f;
+   video_info.frame_count = (uint64_t) video_driver_frame_count;
+
    /* Slightly messy code,
     * but we really need to do processing before blocking on VSync
     * for best possible scheduling.
@@ -2493,6 +2513,63 @@ void video_driver_frame(const void *data, unsigned width,
       strlcpy(video_driver_msg, msg, sizeof(video_driver_msg));
 #ifdef HAVE_THREADS
       runloop_msg_queue_unlock();
+#endif
+   }
+
+   if (video_info.statistics_show)
+   {
+      audio_statistics_t audio_stats         = {0.0f};
+      double stddev                          = 0.0;
+      struct retro_system_av_info *av_info   = &video_driver_av_info;
+      unsigned red                           = 255;
+      unsigned green                         = 255;
+      unsigned blue                          = 255;
+      unsigned alpha                         = 255;
+
+      video_monitor_fps_statistics(NULL, &stddev, NULL);
+
+      video_info.osd_stat_params.x           = 0.010f;
+      video_info.osd_stat_params.y           = 0.950f;
+      video_info.osd_stat_params.scale       = 1.0f;
+      video_info.osd_stat_params.full_screen = true;
+      video_info.osd_stat_params.drop_x      = -2;
+      video_info.osd_stat_params.drop_y      = -2;
+      video_info.osd_stat_params.drop_mod    = 0.3f;
+      video_info.osd_stat_params.drop_alpha  = 1.0f;
+      video_info.osd_stat_params.color       = COLOR_ABGR(red, green, blue, alpha);
+
+      compute_audio_buffer_statistics(&audio_stats);
+
+      snprintf(video_info.stat_text,
+            sizeof(video_info.stat_text), 
+            "Video Statistics:\n -Frame rate: %6.2f fps\n -Frame time: %6.2f ms\n -Frame time deviation: %.3f %%\n"
+            " -Frame count: %" PRIu64"\n -Viewport: %d x %d x %3.2f\n"
+            "Audio Statistics:\n -Average buffer saturation: %.2f %%\n -Standard deviation: %.2f %%\n -Time spent close to underrun: %.2f %%\n -Time spent close to blocking: %.2f %%\n -Sample count: %d\n"
+            "Core Geometry:\n -Size: %u x %u\n -Max Size: %u x %u\n -Aspect: %3.2f\nCore Timing:\n -FPS: %3.2f\n -Sample Rate: %6.2f\n", 
+            video_info.frame_rate,
+            video_info.frame_time,
+            100.0 * stddev,
+            video_info.frame_count,
+            video_info.width,
+            video_info.height,
+            video_info.refresh_rate,
+            audio_stats.average_buffer_saturation,
+            audio_stats.std_deviation_percentage,
+            audio_stats.close_to_underrun,
+            audio_stats.close_to_blocking,
+            audio_stats.samples,
+            av_info->geometry.base_width,
+            av_info->geometry.base_height,
+            av_info->geometry.max_width,
+            av_info->geometry.max_height,
+            av_info->geometry.aspect_ratio,
+            av_info->timing.fps,
+            av_info->timing.sample_rate);
+
+      /* TODO/FIXME - add OSD chat text here */
+#if 0
+      snprintf(video_info.chat_text, sizeof(video_info.chat_text),
+            "anon: does retroarch netplay have in-game chat?\nradius: I don't know \u2605");
 #endif
    }
 
@@ -2603,6 +2680,7 @@ void video_driver_build_info(video_frame_info_t *video_info)
    video_info->hard_sync             = settings->bools.video_hard_sync;
    video_info->hard_sync_frames      = settings->uints.video_hard_sync_frames;
    video_info->fps_show              = settings->bools.video_fps_show;
+   video_info->statistics_show       = settings->bools.video_statistics_show;
    video_info->framecount_show       = settings->bools.video_framecount_show;
    video_info->scale_integer         = settings->bools.video_scale_integer;
    video_info->aspect_ratio_idx      = settings->uints.video_aspect_ratio_idx;

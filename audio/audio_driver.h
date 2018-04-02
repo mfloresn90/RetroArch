@@ -46,6 +46,15 @@ enum audio_action
    AUDIO_ACTION_MIXER
 };
 
+typedef struct audio_statistics
+{
+   float average_buffer_saturation;
+   float std_deviation_percentage;
+   float close_to_underrun;
+   float close_to_blocking;
+   unsigned samples;
+} audio_statistics_t;
+
 typedef struct audio_driver
 {
    /* Creates and initializes handle to audio driver.
@@ -152,7 +161,15 @@ void audio_driver_set_own_driver(void);
 
 void audio_driver_unset_own_driver(void);
 
+void audio_driver_suspend(void);
+
+bool audio_driver_is_suspended(void);
+
+void audio_driver_resume(void);
+
 void audio_driver_set_active(void);
+
+bool audio_driver_is_active(void);
 
 void audio_driver_destroy(void);
 
@@ -257,6 +274,8 @@ bool audio_driver_init(void);
 bool audio_driver_mixer_add_stream(audio_mixer_stream_params_t *params);
 
 enum resampler_quality audio_driver_get_resampler_quality(void);
+
+bool compute_audio_buffer_statistics(audio_statistics_t *stats);
 
 extern audio_driver_t audio_rsound;
 extern audio_driver_t audio_oss;

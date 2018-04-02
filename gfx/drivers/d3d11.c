@@ -39,6 +39,11 @@
 #include "../drivers_shader/slang_process.h"
 #endif
 
+static D3D11Device           cached_device_d3d11;
+static D3D_FEATURE_LEVEL     cached_supportedFeatureLevel;
+static D3D11DeviceContext    cached_context;
+
+
 #ifdef HAVE_OVERLAY
 static void d3d11_free_overlays(d3d11_video_t* d3d11)
 {
@@ -548,8 +553,17 @@ static void d3d11_gfx_free(void* data)
 
    font_driver_free_osd();
 
-   Release(d3d11->context);
-   Release(d3d11->device);
+	if (video_driver_is_video_cache_context())
+	{
+      cached_device_d3d11 = d3d11->device;
+		cached_context = d3d11->context;
+		cached_supportedFeatureLevel = d3d11->supportedFeatureLevel;
+	}
+	else
+	{
+		Release(d3d11->context);
+		Release(d3d11->device);
+	}
 
    win32_monitor_from_window();
    win32_destroy_window();
@@ -560,9 +574,9 @@ static void*
 d3d11_gfx_init(const video_info_t* video, const input_driver_t** input, void** input_data)
 {
    unsigned       i;
-   WNDCLASSEX     wndclass = { 0 };
    MONITORINFOEX  current_mon;
    HMONITOR       hm_to_use;
+   WNDCLASSEX     wndclass = { 0 };
    settings_t*    settings = config_get_ptr();
    d3d11_video_t* d3d11    = (d3d11_video_t*)calloc(1, sizeof(*d3d11));
 
@@ -618,11 +632,32 @@ d3d11_gfx_init(const video_info_t* video, const input_driver_t** input, void** i
 #ifdef DEBUG
       flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
+		if(cached_device_d3d11 && cached_context)
+		{
+			IDXGIFactory* dxgiFactory = NULL;
+			IDXGIDevice* dxgiDevice = NULL;
+			IDXGIAdapter* adapter = NULL;
 
-      D3D11CreateDeviceAndSwapChain(
-            NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, flags, &requested_feature_level, 1,
-            D3D11_SDK_VERSION, &desc, (IDXGISwapChain**)&d3d11->swapChain, &d3d11->device,
-            &d3d11->supportedFeatureLevel, &d3d11->context);
+			d3d11->device = cached_device_d3d11;
+			d3d11->context = cached_context;
+			d3d11->supportedFeatureLevel = cached_supportedFeatureLevel;
+
+			d3d11->device->lpVtbl->QueryInterface(d3d11->device, uuidof(IDXGIDevice), (void**)&dxgiDevice);
+			dxgiDevice->lpVtbl->GetAdapter(dxgiDevice, &adapter);
+			adapter->lpVtbl->GetParent(adapter, uuidof(IDXGIFactory1), (void**)&dxgiFactory);
+			dxgiFactory->lpVtbl->CreateSwapChain(dxgiFactory, (IUnknown*)d3d11->device, &desc, (IDXGISwapChain**)&d3d11->swapChain);
+
+			dxgiFactory->lpVtbl->Release(dxgiFactory);
+			adapter->lpVtbl->Release(adapter);
+			dxgiDevice->lpVtbl->Release(dxgiDevice);
+		}
+		else
+		{
+			D3D11CreateDeviceAndSwapChain(
+					NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, flags, &requested_feature_level, 1,
+					D3D11_SDK_VERSION, &desc, (IDXGISwapChain**)&d3d11->swapChain, &d3d11->device,
+					&d3d11->supportedFeatureLevel, &d3d11->context);
+		}
    }
 
    {
@@ -900,6 +935,19 @@ d3d11_gfx_init(const video_info_t* video, const input_driver_t** input, void** i
          d3d11_gfx_set_shader(d3d11, RARCH_SHADER_SLANG, settings->paths.path_shader);
    }
 
+   if (video_driver_get_hw_context()->context_type == RETRO_HW_CONTEXT_DIRECT3D &&
+       video_driver_get_hw_context()->version_major == 11)
+   {
+      d3d11->hw.enable                  = true;
+      d3d11->hw.iface.interface_type    = RETRO_HW_RENDER_INTERFACE_D3D11;
+      d3d11->hw.iface.interface_version = RETRO_HW_RENDER_INTERFACE_D3D11_VERSION;
+      d3d11->hw.iface.handle            = d3d11;
+      d3d11->hw.iface.device            = d3d11->device;
+      d3d11->hw.iface.context           = d3d11->context;
+      d3d11->hw.iface.featureLevel      = d3d11->supportedFeatureLevel;
+      d3d11->hw.iface.D3DCompile        = D3DCompile;
+   }
+
    return d3d11;
 
 error:
@@ -1076,6 +1124,12 @@ static bool d3d11_gfx_frame(
 
    D3D11SetPrimitiveTopology(context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
+   if (d3d11->hw.enable)
+   {
+      D3D11SetRenderTargets(context, 1, &d3d11->renderTargetView, NULL);
+      D3D11SetState(context, d3d11->state);
+   }
+
    if (frame && width && height)
    {
       if (d3d11->shader_preset)
@@ -1125,8 +1179,9 @@ static bool d3d11_gfx_frame(
       if (d3d11->resize_render_targets)
          d3d11_init_render_targets(d3d11, width, height);
 
-      d3d11_update_texture(
-            context, width, height, pitch, d3d11->format, frame, &d3d11->frame.texture[0]);
+      if (frame != RETRO_HW_FRAME_BUFFER_VALID)
+         d3d11_update_texture(
+               context, width, height, pitch, d3d11->format, frame, &d3d11->frame.texture[0]);
    }
 
    D3D11SetVertexBuffer(context, 0, d3d11->frame.vbo, sizeof(d3d11_vertex_t), 0);
@@ -1203,7 +1258,11 @@ static bool d3d11_gfx_frame(
                texture_sem++;
             }
 
-            D3D11SetPShaderResources(context, 0, SLANG_NUM_BINDINGS, textures);
+            if (d3d11->hw.enable && (i == 0))
+               D3D11SetPShaderResources(context, 1, SLANG_NUM_BINDINGS - 1, textures + 1);
+            else
+               D3D11SetPShaderResources(context, 0, SLANG_NUM_BINDINGS, textures);
+
             D3D11SetPShaderSamplers(context, 0, SLANG_NUM_BINDINGS, samplers);
          }
 
@@ -1230,7 +1289,8 @@ static bool d3d11_gfx_frame(
    if (texture)
    {
       d3d11_set_shader(context, &d3d11->shaders[VIDEO_SHADER_STOCK_BLEND]);
-      D3D11SetPShaderResources(context, 0, 1, &texture->view);
+      if (!d3d11->hw.enable || d3d11->shader_preset)
+         D3D11SetPShaderResources(context, 0, 1, &texture->view);
       D3D11SetPShaderSamplers(
             context, 0, 1, &d3d11->samplers[RARCH_FILTER_UNSPEC][RARCH_WRAP_DEFAULT]);
       D3D11SetVShaderConstantBuffers(context, 0, 1, &d3d11->frame.ubo);
@@ -1267,6 +1327,20 @@ static bool d3d11_gfx_frame(
       D3D11SetViewports(context, 1, &d3d11->viewport);
       D3D11SetVertexBuffer(context, 0, d3d11->sprites.vbo, sizeof(d3d11_sprite_t), 0);
       menu_driver_frame(video_info);
+   }
+   else if (video_info->statistics_show)
+   {
+      struct font_params* osd_params = (struct font_params*)&video_info->osd_stat_params;
+
+      if (osd_params)
+      {
+         D3D11SetViewports(context, 1, &d3d11->viewport);
+         D3D11SetBlendState(d3d11->context, d3d11->blend_enable, NULL, D3D11_DEFAULT_SAMPLE_MASK);
+         D3D11SetVertexBuffer(context, 0, d3d11->sprites.vbo, sizeof(d3d11_sprite_t), 0);
+         font_driver_render_msg(
+               video_info, NULL, video_info->stat_text,
+               (const struct font_params*)&video_info->osd_stat_params);
+      }
    }
 
 #ifdef HAVE_OVERLAY
@@ -1372,11 +1446,14 @@ static bool d3d11_gfx_read_viewport(void* data, uint8_t* buffer, bool is_idle)
 static void d3d11_set_menu_texture_frame(
       void* data, const void* frame, bool rgb32, unsigned width, unsigned height, float alpha)
 {
-   d3d11_video_t* d3d11 = (d3d11_video_t*)data;
-   DXGI_FORMAT    format =
-         rgb32 ? DXGI_FORMAT_B8G8R8A8_UNORM : (DXGI_FORMAT)DXGI_FORMAT_EX_A4R4G4B4_UNORM;
+   d3d11_video_t* d3d11    = (d3d11_video_t*)data;
+   settings_t*    settings = config_get_ptr();
+   DXGI_FORMAT    format   = rgb32 ? DXGI_FORMAT_B8G8R8A8_UNORM : 
+      (DXGI_FORMAT)DXGI_FORMAT_EX_A4R4G4B4_UNORM;
 
-   if (d3d11->menu.texture.desc.Width != width || d3d11->menu.texture.desc.Height != height)
+   if (
+         d3d11->menu.texture.desc.Width  != width || 
+         d3d11->menu.texture.desc.Height != height)
    {
       d3d11->menu.texture.desc.Format = format;
       d3d11->menu.texture.desc.Width  = width;
@@ -1384,11 +1461,12 @@ static void d3d11_set_menu_texture_frame(
       d3d11_init_texture(d3d11->device, &d3d11->menu.texture);
    }
 
-   d3d11_update_texture(d3d11->context, width, height, 0, format, frame, &d3d11->menu.texture);
+   d3d11_update_texture(d3d11->context, width, height, 0,
+         format, frame, &d3d11->menu.texture);
    d3d11->menu.texture.sampler = d3d11->samplers
-                                       [config_get_ptr()->bools.menu_linear_filter
-                                              ? RARCH_FILTER_LINEAR
-                                              : RARCH_FILTER_NEAREST][RARCH_WRAP_DEFAULT];
+      [settings->bools.menu_linear_filter
+      ? RARCH_FILTER_LINEAR
+         : RARCH_FILTER_NEAREST][RARCH_WRAP_DEFAULT];
 }
 
 static void d3d11_set_menu_texture_enable(void* data, bool state, bool full_screen)
@@ -1429,7 +1507,7 @@ static void d3d11_gfx_set_osd_msg(
    if (d3d11)
    {
       if (d3d11->sprites.enabled)
-         font_driver_render_msg(video_info, font, msg, params);
+         font_driver_render_msg(video_info, font, msg, (const struct font_params*)params);
       else
          printf("OSD msg: %s\n", msg);
    }
@@ -1493,6 +1571,14 @@ static void d3d11_gfx_unload_texture(void* data, uintptr_t handle)
    free(texture);
 }
 
+static bool
+d3d11_get_hw_render_interface(void* data, const struct retro_hw_render_interface** iface)
+{
+   d3d11_video_t* d3d11 = (d3d11_video_t*)data;
+   *iface               = (const struct retro_hw_render_interface*)&d3d11->hw.iface;
+   return d3d11->hw.enable;
+}
+
 static const video_poke_interface_t d3d11_poke_interface = {
    NULL, /* set_coords */
    NULL, /* set_mvp */
@@ -1514,7 +1600,7 @@ static const video_poke_interface_t d3d11_poke_interface = {
    NULL, /* grab_mouse_toggle */
    d3d11_gfx_get_current_shader,
    NULL, /* get_current_software_framebuffer */
-   NULL, /* get_hw_render_interface */
+   d3d11_get_hw_render_interface,
 };
 
 static void d3d11_gfx_get_poke_interface(void* data, const video_poke_interface_t** iface)

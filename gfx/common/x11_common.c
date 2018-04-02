@@ -107,7 +107,7 @@ void x11_show_mouse(Display *dpy, Window win, bool state)
       x11_hide_mouse(dpy, win);
 }
 
-void x11_windowed_fullscreen(Display *dpy, Window win)
+void x11_set_net_wm_fullscreen(Display *dpy, Window win)
 {
    XEvent xev                 = {0};
 

@@ -402,6 +402,7 @@ typedef struct video_frame_info
    bool black_frame_insertion;
    bool hard_sync;
    bool fps_show;
+   bool statistics_show;
    bool framecount_show;
    bool scale_integer;
    bool post_filter_record;
@@ -450,6 +451,31 @@ typedef struct video_frame_info
    float xmb_alpha_factor;
 
    char fps_text[128];
+   char stat_text[512];
+   char chat_text[256];
+
+   uint64_t frame_count;
+   float frame_time;
+   float frame_rate;
+
+   struct
+   {
+      float x;
+      float y;
+      float scale;
+      /* Drop shadow color multiplier. */
+      float drop_mod;
+      /* Drop shadow offset.
+       * If both are 0, no drop shadow will be rendered. */
+      int drop_x, drop_y;
+      /* Drop shadow alpha */
+      float drop_alpha;
+      /* ABGR. Use the macros. */
+      uint32_t color;
+      bool full_screen;
+      enum text_alignment text_align;
+   } osd_stat_params;
+
    void (*cb_update_window_title)(void*, void *);
    void (*cb_swap_buffers)(void*, void *);
    bool (*cb_get_metrics)(void *data, enum display_metric_types type,
@@ -905,6 +931,7 @@ void video_driver_destroy(void);
 void video_driver_set_cached_frame_ptr(const void *data);
 void video_driver_set_stub_frame(void);
 void video_driver_unset_stub_frame(void);
+bool video_driver_is_stub_frame(void);
 bool video_driver_supports_recording(void);
 bool video_driver_supports_viewport_read(void);
 bool video_driver_supports_read_frame_raw(void);
@@ -949,6 +976,7 @@ bool video_driver_is_video_cache_context(void);
 void video_driver_set_video_cache_context_ack(void);
 bool video_driver_is_video_cache_context_ack(void);
 void video_driver_set_active(void);
+void video_driver_unset_active(void);
 bool video_driver_is_active(void);
 bool video_driver_gpu_record_init(unsigned size);
 void video_driver_gpu_record_deinit(void);
