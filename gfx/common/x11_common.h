@@ -48,6 +48,8 @@ void x11_destroy_input_context(XIM *xim, XIC *xic);
 bool x11_get_metrics(void *data,
       enum display_metric_types type, float *value);
 
+float x11_get_refresh_rate(void *data);
+
 void x11_check_window(void *data, bool *quit,
    bool *resize, unsigned *width, unsigned *height, bool is_shutdown);
 
@@ -74,6 +76,10 @@ void x11_colormap_destroy(void);
 void x11_install_quit_atom(void);
 
 void x11_event_queue_check(XEvent *event);
+
+char *x11_get_wm_name(Display *dpy);
+
+bool x11_has_net_wm_fullscreen(Display *dpy);
 
 #endif
 

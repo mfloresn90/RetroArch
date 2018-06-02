@@ -81,7 +81,9 @@ enum vulkan_wsi_type
    VULKAN_WSI_WIN32,
    VULKAN_WSI_XCB,
    VULKAN_WSI_XLIB,
-   VULKAN_WSI_DISPLAY
+   VULKAN_WSI_DISPLAY,
+   VULKAN_WSI_MVK_MACOS,
+   VULKAN_WSI_MVK_IOS,
 };
 
 typedef struct vulkan_context
@@ -445,6 +447,12 @@ void vulkan_image_layout_transition(vk_t *vk,
       VkImageLayout old_layout, VkImageLayout new_layout,
       VkAccessFlags srcAccess, VkAccessFlags dstAccess,
       VkPipelineStageFlags srcStages, VkPipelineStageFlags dstStages);
+
+void vulkan_image_layout_transition_levels(
+      VkCommandBuffer cmd, VkImage image, uint32_t levels,
+      VkImageLayout old_layout, VkImageLayout new_layout,
+      VkAccessFlags src_access, VkAccessFlags dst_access,
+      VkPipelineStageFlags src_stages, VkPipelineStageFlags dst_stages);
 
 static INLINE unsigned vulkan_format_to_bpp(VkFormat format)
 {

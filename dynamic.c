@@ -390,8 +390,11 @@ bool libretro_get_system_info(const char *path,
  **/
 bool init_libretro_sym_custom(enum rarch_core_type type, struct retro_core_t *current_core, const char *lib_path, dylib_t *lib_handle_p)
 {
+#ifdef HAVE_DYNAMIC
    /* the library handle for use with the SYMBOL macro */
    dylib_t lib_handle_local;
+#endif
+
    switch (type)
    {
       case CORE_TYPE_PLAIN:
@@ -922,25 +925,27 @@ static bool dynamic_request_hw_context(enum retro_hw_context_type type,
          break;
 #endif
 
-	case RETRO_HW_CONTEXT_DIRECT3D:
-		switch(major)
-      {
+#if defined(HAVE_D3D9) || defined(HAVE_D3D11)
+      case RETRO_HW_CONTEXT_DIRECT3D:
+         switch (major)
+         {
 #ifdef HAVE_D3D9
-         case 9:
-            RARCH_LOG("Requesting D3D9 context.\n");
-            break;
+            case 9:
+               RARCH_LOG("Requesting D3D9 context.\n");
+               break;
 #endif
 #ifdef HAVE_D3D11
-         case 11:
-            RARCH_LOG("Requesting D3D11 context.\n");
-            break;
+            case 11:
+               RARCH_LOG("Requesting D3D11 context.\n");
+               break;
 #endif
-         default:
-            goto unknown;
-      }
-		break;
+            default:
+               RARCH_LOG("Requesting unknown context.\n");
+               return false;
+         }
+         break;
+#endif
 
-unknown:
       default:
          RARCH_LOG("Requesting unknown context.\n");
          return false;
@@ -1757,22 +1762,18 @@ bool rarch_environment_cb(unsigned cmd, void *data)
       {
          int result = 0;
          if (!audio_driver_is_suspended() && audio_driver_is_active())
-         {
             result |= 2;
-         }
          if (video_driver_is_active() && !video_driver_is_stub_frame())
-         {
             result |= 1;
-         }
 #ifdef HAVE_RUNAHEAD
          if (want_fast_savestate())
-         {
             result |= 4;
-         }
          if (get_hard_disable_audio())
-         {
             result |= 8;
-         }
+#endif
+#ifdef HAVE_NETWORKING
+         if (netplay_driver_ctl(RARCH_NETPLAY_CTL_IS_REPLAYING, NULL))
+            result &= ~(1|2);
 #endif
          if (data != NULL)
          {

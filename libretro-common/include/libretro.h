@@ -1,4 +1,4 @@
-/* Copyright (C) 2010-2017 The RetroArch team
+/* Copyright (C) 2010-2018 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this libretro API header (libretro.h).
@@ -599,9 +599,12 @@ enum retro_mod
                                             * GET_VARIABLE.
                                             * This allows the frontend to present these variables to
                                             * a user dynamically.
-                                            * This should be called as early as possible (ideally in
-                                            * retro_set_environment).
-                                            *
+                                            * This should be called the first time as early as
+                                            * possible (ideally in retro_set_environment).
+                                            * Afterward it may be called again for the core to communicate
+                                            * updated options to the frontend, but the number of core
+                                            * options must not change from the number in the initial call.
+					    *
                                             * 'data' points to an array of retro_variable structs
                                             * terminated by a { NULL, NULL } element.
                                             * retro_variable::key should be namespaced to not collide
@@ -775,17 +778,18 @@ enum retro_mod
                                             */
 #define RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY 31
                                            /* const char ** --
-                                            * Returns the "save" directory of the frontend.
-                                            * This directory can be used to store SRAM, memory cards,
-                                            * high scores, etc, if the libretro core
+                                            * Returns the "save" directory of the frontend, unless there is no
+                                            * save directory available. The save directory should be used to
+                                            * store SRAM, memory cards, high scores, etc, if the libretro core
                                             * cannot use the regular memory interface (retro_get_memory_data()).
                                             *
-                                            * NOTE: libretro cores used to check GET_SYSTEM_DIRECTORY for
-                                            * similar things before.
-                                            * They should still check GET_SYSTEM_DIRECTORY if they want to
-                                            * be backwards compatible.
-                                            * The path here can be NULL. It should only be non-NULL if the
-                                            * frontend user has set a specific save path.
+                                            * If the frontend cannot designate a save directory, it will return
+                                            * NULL to indicate that the core should attempt to operate without a
+                                            * save directory set.
+                                            *
+                                            * NOTE: early libretro cores used the system directory for save
+                                            * files. Cores that need to be backwards-compatible can still check
+                                            * GET_SYSTEM_DIRECTORY.
                                             */
 #define RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO 32
                                            /* const struct retro_system_av_info * --
@@ -2365,7 +2369,9 @@ RETRO_API bool retro_unserialize(const void *data, size_t size);
 RETRO_API void retro_cheat_reset(void);
 RETRO_API void retro_cheat_set(unsigned index, bool enabled, const char *code);
 
-/* Loads a game. */
+/* Loads a game. 
+ * Return true to indicate successful loading and false to indicate load failure.
+ */
 RETRO_API bool retro_load_game(const struct retro_game_info *game);
 
 /* Loads a "special" kind of game. Should not be used,
@@ -2375,7 +2381,7 @@ RETRO_API bool retro_load_game_special(
   const struct retro_game_info *info, size_t num_info
 );
 
-/* Unloads a currently loaded game. */
+/* Unloads the currently loaded game. Called before retro_deinit(void). */
 RETRO_API void retro_unload_game(void);
 
 /* Gets region of game. */

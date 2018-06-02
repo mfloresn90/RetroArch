@@ -13,6 +13,8 @@
 #include "../dynamic.h"
 #include "../audio/audio_driver.h"
 #include "../gfx/video_driver.h"
+#include "../configuration.h"
+#include "../retroarch.h"
 
 static bool runahead_create(void);
 static bool runahead_save_state(void);
@@ -28,7 +30,8 @@ static void unset_fast_savestate(void);
 static void set_hard_disable_audio(void);
 static void unset_hard_disable_audio(void);
 
-static size_t runahead_save_state_size = -1;
+static size_t runahead_save_state_size = 0;
+static bool runahead_save_state_size_known = false;
 
 /* Save State List for Run Ahead */
 static MyList *runahead_save_state_list;
@@ -45,7 +48,7 @@ static void *runahead_save_state_alloc(void)
    savestate->data_const    = NULL;
    savestate->size          = 0;
 
-   if (runahead_save_state_size > 0 && runahead_save_state_size != -1)
+   if (runahead_save_state_size > 0 && runahead_save_state_size_known)
    {
       savestate->data       = malloc(runahead_save_state_size);
       savestate->data_const = savestate->data;
@@ -67,6 +70,7 @@ static void runahead_save_state_free(void *state)
 static void runahead_save_state_list_init(size_t saveStateSize)
 {
    runahead_save_state_size = saveStateSize;
+   runahead_save_state_size_known = true;
    mylist_create(&runahead_save_state_list, 16,
          runahead_save_state_alloc, runahead_save_state_free);
 }
@@ -112,7 +116,6 @@ static void remove_hooks(void)
       current_core.retro_unload_game = originalRetroUnload;
       originalRetroUnload            = NULL;
    }
-   current_core.retro_set_environment(rarch_environment_cb);
    remove_input_state_hook();
 }
 
@@ -135,18 +138,6 @@ static void deinit_hook(void)
       current_core.retro_deinit();
 }
 
-static bool env_hook(unsigned cmd, void *data)
-{
-   bool result = rarch_environment_cb(cmd, data);
-   if (cmd == RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE && result)
-   {
-      bool *bool_p = (bool*)data;
-      if (*bool_p == true)
-         secondary_core_set_variable_update();
-   }
-   return result;
-}
-
 static void add_hooks(void)
 {
    if (!originalRetroDeinit)
@@ -160,7 +151,6 @@ static void add_hooks(void)
       originalRetroUnload = current_core.retro_unload_game;
       current_core.retro_unload_game = unload_hook;
    }
-   current_core.retro_set_environment(env_hook);
    add_input_state_hook();
 }
 
@@ -175,7 +165,8 @@ static uint64_t runahead_last_frame_count     = 0;
 
 static void runahead_clear_variables(void)
 {
-   runahead_save_state_size          = -1;
+   runahead_save_state_size          = 0;
+   runahead_save_state_size_known    = false;
    runahead_video_driver_is_active   = true;
    runahead_available                = true;
    runahead_secondary_core_available = true;
@@ -197,25 +188,33 @@ static void runahead_check_for_gui(void)
    runahead_last_frame_count = frame_count;
 }
 
-void run_ahead(int runAheadCount, bool useSecondary)
+void run_ahead(int runahead_count, bool useSecondary)
 {
-   int frameNumber;
-   bool okay;
-   bool lastFrame;
-   bool suspendedFrame;
+   int frame_number        = 0;
+   bool last_frame         = false;
+   bool suspended_frame    = false;
+#if defined(HAVE_DYNAMIC) || defined(HAVE_DYLIB)
+   const bool have_dynamic = true;
+#else
+   const bool have_dynamic = false;
+#endif
 
-   if (runAheadCount <= 0 || !runahead_available)
+   if (runahead_count <= 0 || !runahead_available)
    {
       core_run();
       runahead_force_input_dirty = true;
       return;
    }
 
-   if (runahead_save_state_size == -1)
+   if (!runahead_save_state_size_known)
    {
       if (!runahead_create())
       {
-         /* RunAhead has been disabled because the core does not support savestates. */
+         settings_t *settings = config_get_ptr();
+         if (!settings->bools.run_ahead_hide_warnings)
+         {
+            runloop_msg_queue_push(msg_hash_to_str(MSG_RUNAHEAD_CORE_DOES_NOT_SUPPORT_SAVESTATES), 0, 2 * 60, true);
+         }
          core_run();
          runahead_force_input_dirty = true;
          return;
@@ -224,49 +223,63 @@ void run_ahead(int runAheadCount, bool useSecondary)
 
    runahead_check_for_gui();
 
-   if (!useSecondary || !HAVE_DYNAMIC || !runahead_secondary_core_available)
+   if (!useSecondary || !have_dynamic || !runahead_secondary_core_available)
    {
-      /* TODO: multiple savestates for higher performance when not using secondary core */
-      for (frameNumber = 0; frameNumber <= runAheadCount; frameNumber++)
+      /* TODO: multiple savestates for higher performance 
+       * when not using secondary core */
+      for (frame_number = 0; frame_number <= runahead_count; frame_number++)
       {
-         lastFrame      = frameNumber == runAheadCount;
-         suspendedFrame = !lastFrame;
+         last_frame      = frame_number == runahead_count;
+         suspended_frame = !last_frame;
 
-         if (suspendedFrame)
+         if (suspended_frame)
          {
             runahead_suspend_audio();
             runahead_suspend_video();
          }
 
-         if (frameNumber == 0)
+         if (frame_number == 0)
             core_run();
          else
             core_run_no_input_polling();
 
-         if (suspendedFrame)
+         if (suspended_frame)
          {
             runahead_resume_video();
             runahead_resume_audio();
          }
 
-         if (frameNumber == 0)
+         if (frame_number == 0)
          {
-            /* RunAhead has been disabled due to save state failure */
             if (!runahead_save_state())
+            {
+               runloop_msg_queue_push(msg_hash_to_str(MSG_RUNAHEAD_FAILED_TO_SAVE_STATE), 0, 3 * 60, true);
                return;
+            }
          }
 
-         if (lastFrame)
+         if (last_frame)
          {
-            /* RunAhead has been disabled due to load state failure */
             if (!runahead_load_state())
+            {
+               runloop_msg_queue_push(msg_hash_to_str(MSG_RUNAHEAD_FAILED_TO_LOAD_STATE), 0, 3 * 60, true);
                return;
+            }
          }
       }
    }
    else
    {
 #if HAVE_DYNAMIC
+      if (!secondary_core_ensure_exists())
+      {
+         runahead_secondary_core_available = false;
+         runloop_msg_queue_push(msg_hash_to_str(MSG_RUNAHEAD_FAILED_TO_CREATE_SECONDARY_INSTANCE), 0, 3 * 60, true);
+         core_run();
+         runahead_force_input_dirty = true;
+         return;
+      }
+
       /* run main core with video suspended */
       runahead_suspend_video();
       core_run();
@@ -274,44 +287,36 @@ void run_ahead(int runAheadCount, bool useSecondary)
 
       if (input_is_dirty || runahead_force_input_dirty)
       {
-         unsigned frame_count;
-
          input_is_dirty       = false;
 
          if (!runahead_save_state())
+         {
+            runloop_msg_queue_push(msg_hash_to_str(MSG_RUNAHEAD_FAILED_TO_SAVE_STATE), 0, 3 * 60, true);
             return;
+         }
 
-         /* Could not create a secondary core.
-          * RunAhead wll only use the main core now. */
          if (!runahead_load_state_secondary())
+         {
+            runloop_msg_queue_push(msg_hash_to_str(MSG_RUNAHEAD_FAILED_TO_LOAD_STATE), 0, 3 * 60, true);
             return;
+         }
 
-         for (frame_count = 0; frame_count < (unsigned)(runAheadCount - 1); frame_count++)
+         for (frame_number = 0; frame_number < runahead_count - 1; frame_number++)
          {
             runahead_suspend_video();
             runahead_suspend_audio();
             set_hard_disable_audio();
-            okay = runahead_run_secondary();
+            runahead_run_secondary();
             unset_hard_disable_audio();
             runahead_resume_audio();
             runahead_resume_video();
-
-            /* Could not create a secondary core. RunAhead
-             * will only use the main core now. */
-            if (!okay)
-               return;
          }
       }
       runahead_suspend_audio();
       set_hard_disable_audio();
-      okay = runahead_run_secondary();
+      runahead_run_secondary();
       unset_hard_disable_audio();
       runahead_resume_audio();
-
-      /* Could not create a secondary core. RunAhead
-       * will only use the main core now. */
-      if (!okay)
-         return;
 #endif
    }
    runahead_force_input_dirty = false;
@@ -323,18 +328,21 @@ static void runahead_error(void)
    runahead_save_state_list_destroy();
    remove_hooks();
    runahead_save_state_size = 0;
+   runahead_save_state_size_known = true;
 }
 
 static bool runahead_create(void)
 {
    /* get savestate size and allocate buffer */
    retro_ctx_size_info_t info;
+   set_fast_savestate();
    core_serialize_size(&info);
+   unset_fast_savestate();
 
    runahead_save_state_list_init(info.size);
    runahead_video_driver_is_active = video_driver_is_active();
 
-   if (runahead_save_state_size == 0 || runahead_save_state_size == -1)
+   if (runahead_save_state_size == 0 || !runahead_save_state_size_known)
    {
       runahead_error();
       return false;
@@ -348,29 +356,38 @@ static bool runahead_create(void)
 
 static bool runahead_save_state(void)
 {
-   retro_ctx_serialize_info_t *serialize_info =
+   bool okay                                  = false;
+   retro_ctx_serialize_info_t *serialize_info;
+   if (!runahead_save_state_list)
+      return false;
+   serialize_info =
       (retro_ctx_serialize_info_t*)runahead_save_state_list->data[0];
-   bool okay;
    set_fast_savestate();
    okay = core_serialize(serialize_info);
    unset_fast_savestate();
    if (!okay)
+   {
       runahead_error();
-   return okay;
+      return false;
+   }
+   return true;
 }
 
 static bool runahead_load_state(void)
 {
+   bool okay                                  = false;
    retro_ctx_serialize_info_t *serialize_info = (retro_ctx_serialize_info_t*)
       runahead_save_state_list->data[0];
-   bool lastDirty = input_is_dirty;
-   bool okay;
+   bool last_dirty                            = input_is_dirty;
+
    set_fast_savestate();
-   /* calling core_unserialize has side effects with netplay (it triggers transmitting your save state)
+   /* calling core_unserialize has side effects with 
+    * netplay (it triggers transmitting your save state)
       call retro_unserialize directly from the core instead */
-   okay = current_core.retro_unserialize(serialize_info->data_const, serialize_info->size);
+   okay = current_core.retro_unserialize(
+         serialize_info->data_const, serialize_info->size);
    unset_fast_savestate();
-   input_is_dirty = lastDirty;
+   input_is_dirty = last_dirty;
 
    if (!okay)
       runahead_error();
@@ -380,25 +397,33 @@ static bool runahead_load_state(void)
 
 static bool runahead_load_state_secondary(void)
 {
+   bool okay                                  = false;
    retro_ctx_serialize_info_t *serialize_info =
       (retro_ctx_serialize_info_t*)runahead_save_state_list->data[0];
-   bool okay;
+
    set_fast_savestate();
-   okay = secondary_core_deserialize(serialize_info->data_const, serialize_info->size);
+   okay = secondary_core_deserialize(
+         serialize_info->data_const, (int)serialize_info->size);
    unset_fast_savestate();
 
    if (!okay)
+   {
       runahead_secondary_core_available = false;
+      runahead_error();
+      return false;
+   }
 
-   return okay;
+   return true;
 }
 
 static bool runahead_run_secondary(void)
 {
-   bool okay = secondary_core_run_no_input_polling();
-   if (!okay)
+   if (!secondary_core_run_no_input_polling())
+   {
       runahead_secondary_core_available = false;
-   return okay;
+      return false;
+   }
+   return true;
 }
 
 static void runahead_suspend_audio(void)
